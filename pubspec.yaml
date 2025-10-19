@@ -34,9 +34,11 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2
-  shared_preferences: ^2.0.8
-  image: ^3.0.8
-  flame: ^1.0.0-releasecandidate.15
+  shared_preferences: ^2.5.3
+  image: ^4.5.4
+  flame: ^1.32.0
+  flame_audio: ^2.0.4
+  lottie: ^3.1.2
   
 dev_dependencies:
   flutter_test:
@@ -68,6 +70,9 @@ flutter:
     - assets/images/hearth.png
     - assets/images/cockrock.png
     - assets/images/spider.png
+    - assets/animations/ant.json
+    - assets/animations/spider.json
+    - assets/animations/cockroach.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware.

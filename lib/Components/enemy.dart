@@ -1,38 +1,37 @@
 import 'package:flame/components.dart';
+import 'package:flutter/material.dart';
 import '../game_controller.dart';
 import 'Util/knows_game_size.dart';
 
 class Enemy extends SpriteComponent with KnowsGameSize {
-  bool isDead = false;
-  int health = 1;
-  bool isPressed = false;
   final GameController gameController;
-  Enemy(
-    this.gameController, {
+  bool isDead = false;
+  double speed = 50.0; // Hareket hızı
+
+  Enemy({
+    required this.gameController,
     Sprite? sprite,
     Vector2? position,
     Vector2? size,
-  }) : super(sprite: sprite, position: position, size: size);
+  }) : super(sprite: sprite, position: position, size: size) {
+    anchor = Anchor.center;
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (isDead) return;
+    super.render(canvas);
+  }
 
   @override
   void update(double dt) {
     super.update(dt);
 
-    gameController.score % 15 == 0 && gameController.score != 0
-        ? {
-            gameController.enemyManager.speed += 0.2,
-          }
-        : null;
-    double stepDistance = gameController.enemyManager.speed * dt;
+    if (isDead) return;
 
-    !isPressed
-        ? position.moveToTarget(gameController.player.position, stepDistance)
-        : null;
-
-    if (isPressed) {
-      gameController.score = (gameController.score + 1.0 / 2);
-    }
+    // Pastaya doğru hareket et (level hızı ile)
+    final direction = (gameController.player.position - position).normalized();
+    final currentSpeed = speed * gameController.enemySpeedMultiplier;
+    position += direction * currentSpeed * dt;
   }
 }
-
-enum EnemyType { boss, chimp }

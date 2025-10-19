@@ -1,24 +1,80 @@
 import 'package:flame/components.dart';
-
+import 'package:flutter/material.dart';
 import '../game_controller.dart';
 import 'Util/knows_game_size.dart';
 
 class Player extends SpriteComponent with KnowsGameSize {
-  Vector2 _moveDirection = Vector2.zero();
-  final double _speed = 300;
-  late GameController gameController;
+  final GameController gameController;
   double currentHealth = 100;
-  bool isDead = false;
+  // isDead değişkenini tamamen kaldırdık
+
   Player({
     Sprite? sprite,
     Vector2? position,
     Vector2? size,
-  }) : super(sprite: sprite, position: position, size: size);
+    GameController? gameController,
+  })  : gameController = gameController ?? GameController(),
+        super(sprite: sprite, position: position, size: size) {
+    anchor = Anchor.center;
+  }
 
   @override
-  void update(double dt) {
-    super.update(dt);
-    position += _moveDirection.normalized() * _speed * dt;
-    position.clamp(Vector2.zero() + size / 2, gameSize - size / 2);
+  void render(Canvas canvas) {
+    // Debug mesajları - her render'da çalışsın
+    print("=== PLAYER RENDER ===");
+    print("Sprite: ${sprite != null}");
+    print("Position: $position");
+    print("Size: $size");
+    print("Health: $currentHealth");
+    print("Anchor: $anchor");
+    print("Parent: ${parent != null}");
+
+    if (sprite == null) {
+      print("SPRITE NULL! Pasta render edilemiyor!");
+      return;
+    }
+
+    if (parent == null) {
+      print("PARENT NULL! Pasta parent'tan ayrılmış!");
+      return;
+    }
+
+    print("Pasta render ediliyor...");
+    super.render(canvas);
+    print("Pasta render tamamlandı");
+  }
+
+  void updatePosition(Vector2 newPosition) {
+    position = newPosition;
+  }
+
+  void takeDamage(double damage) {
+    print("=== PLAYER TAKE DAMAGE ===");
+    print("Hasar öncesi can: $currentHealth");
+    print("Alınan hasar: $damage");
+
+    currentHealth -= damage;
+    if (currentHealth <= 0) {
+      currentHealth = 0;
+      print("CAN BİTTİ! Oyun bitecek!");
+    }
+
+    print("Hasar sonrası can: $currentHealth");
+
+    // Hasar efekti kaldırıldı - pasta kaybolmasını önlemek için
+    print("Hasar efekti kaldırıldı - pasta kaybolmasını önlemek için");
+  }
+
+  // Canı yenileme metodu
+  void heal(double amount) {
+    currentHealth += amount;
+    if (currentHealth > 100) {
+      currentHealth = 100;
+    }
+  }
+
+  // Canı sıfırlama metodu
+  void resetHealth() {
+    currentHealth = 100;
   }
 }

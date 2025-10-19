@@ -1,94 +1,98 @@
 import 'dart:math';
-import 'dart:math' as math;
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart';
 import '../game_controller.dart';
 import 'Util/knows_game_size.dart';
+import 'Util/state.dart';
 import 'enemy.dart';
 
 class EnemyManager extends Component with KnowsGameSize {
-  late Timer _timer;
-  double speed = 100;
+  late Timer _spawnTimer;
   List<Sprite> sprites;
-  late Map<Enemy, Enemy> enemyList;
-  EnemyType enemyType = EnemyType.chimp;
-  Random random = Random();
-  late Enemy enemy;
-  late Enemy explosion;
   final GameController gameController;
+  List<Enemy> enemies = [];
+
   EnemyManager({required this.sprites, required this.gameController})
       : super() {
-    _timer = Timer(1, callback: spawnerEnemy, repeat: true);
-    enemyList = {};
+    _spawnTimer = Timer(2.0, onTick: _spawnEnemy, repeat: true);
   }
 
-  void spawnerEnemy() {
-    var angle = random.nextInt(360).toDouble();
-    double radius = getRadius;
+  // Spawn timer'ı level'e göre güncelle
+  void updateSpawnRate() {
+    final baseSpawnTime = 2.0;
+    final newSpawnTime = baseSpawnTime / gameController.spawnRateMultiplier;
+    _spawnTimer.stop();
+    _spawnTimer = Timer(newSpawnTime, onTick: _spawnEnemy, repeat: true);
+    _spawnTimer.start();
+  }
 
-    enemy = Enemy(
-      gameController,
-      sprite: sprites[0],
+  void _spawnEnemy() {
+    if (gameController.gameState != GameState.playing) return;
+
+    // Maksimum 10 düşman
+    if (enemies.length >= 10) return;
+
+    // Rastgele sprite seç
+    final sprite = sprites[Random().nextInt(sprites.length)];
+
+    // Ekranın kenarından spawn et
+    final side = Random().nextInt(4); // 0: üst, 1: sağ, 2: alt, 3: sol
+    Vector2 position;
+
+    switch (side) {
+      case 0: // Üst
+        position = Vector2(Random().nextDouble() * gameSize.x, -50);
+        break;
+      case 1: // Sağ
+        position = Vector2(gameSize.x + 50, Random().nextDouble() * gameSize.y);
+        break;
+      case 2: // Alt
+        position = Vector2(Random().nextDouble() * gameSize.x, gameSize.y + 50);
+        break;
+      case 3: // Sol
+        position = Vector2(-50, Random().nextDouble() * gameSize.y);
+        break;
+      default:
+        position = Vector2.zero();
+    }
+
+    // Düşman oluştur
+    final enemy = Enemy(
+      gameController: gameController,
+      sprite: sprite,
+      position: position,
+      size: Vector2(50, 50),
     );
 
-    explosion = Enemy(
-      gameController,
-      sprite: sprites[1],
-    );
-
-    double x = gameSize.toSize().width / 2 + radius * cos(angle);
-    double y = gameSize.toSize().height / 2 + radius * sin(angle);
-
-    x = getX(x);
-    y = getY(y);
-
-    Vector2 initialSize = Vector2(64, 64);
-
-    Rect positionRect = Rect.fromLTWH(
-        x, y, initialSize.toRect().width, initialSize.toRect().height);
-    Vector2 position = Vector2(positionRect.center.dx, positionRect.center.dy);
-
-    explosion.angle = Vector2(x, y).toOffset().direction;
-
-    enemy.anchor = Anchor.center;
-    enemy.position = position;
-    enemy.size = initialSize;
-
-    explosion.anchor = Anchor.center;
-    explosion.position = position;
-    explosion.size = initialSize;
-
-    enemyList[enemy] = explosion;
-
-    explosion.setOpacity(0);
-
-    add(explosion);
+    enemies.add(enemy);
     add(enemy);
+
+    print("Düşman spawn edildi: ${enemies.length}");
   }
 
   @override
   void onMount() {
     super.onMount();
-    _timer.start();
+    _spawnTimer.start();
   }
 
   @override
   void onRemove() {
     super.onRemove();
-    _timer.stop();
+    _spawnTimer.stop();
   }
 
   @override
   void update(double dt) {
     super.update(dt);
-    _timer.update(dt);
+    _spawnTimer.update(dt);
+
+    // Ölü düşmanları temizle
+    enemies.removeWhere((enemy) {
+      if (enemy.isDead) {
+        enemy.removeFromParent();
+        return true;
+      }
+      return false;
+    });
   }
-
-  double get getRadius =>
-      math.sqrt((gameSize.toSize().width / 2 * gameSize.toSize().width / 2 +
-          gameSize.toSize().height / 2 * gameSize.toSize().height / 2));
-
-  double getX(double x) => x < 0 ? x - 100 : x + 100;
-
-  double getY(double y) => y < 0 ? y - 100 : y + 100;
 }
