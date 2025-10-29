@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "487884734728",
+    "project_id": "ants-and-bugs",
+    "storage_bucket": "ants-and-bugs.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:487884734728:android:1d1160cea81dc6ad3c6cbd",
+        "android_client_info": {
+          "package_name": "co.spacebee.antsandbugs"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCSI0oFxPNOaIKVoQ-6n-87O_sB35TcdDQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

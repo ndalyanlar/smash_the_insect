@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
@@ -8,6 +9,7 @@ import 'package:flame/input.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:smash_the_insect/generated/locale_keys.g.dart';
 
 import 'Components/Util/state.dart';
 import 'Components/enemy_manager.dart';
@@ -17,6 +19,12 @@ import 'Components/player.dart';
 import 'Components/blood_effect.dart';
 import 'Components/explosion_effect.dart';
 import 'Components/pause_menu.dart';
+import 'Components/admob_service.dart';
+import 'Components/analytics_service.dart';
+import 'Components/sound_manager.dart';
+import 'Components/firestore_service.dart';
+import 'Components/banner_ad_widget.dart';
+import 'Components/power_up.dart';
 
 class GameController extends FlameGame
     with TapDetector, HasKeyboardHandlerComponents {
@@ -24,6 +32,7 @@ class GameController extends FlameGame
   late GameState gameState;
   late Player player;
   late EnemyManager enemyManager;
+  late PowerUpManager powerUpManager;
   late HealthBar healthBar;
   late PauseMenu pauseMenu;
 
@@ -31,32 +40,142 @@ class GameController extends FlameGame
   BuildContext? _context;
   bool _isPaused = false;
 
+  // AdMob servisi
+  final AdMobService _adMobService = AdMobService();
+
+  // Analytics servisi
+  final AnalyticsService _analytics = AnalyticsService();
+
+  // Firestore servisi
+  final FirestoreService _firestoreService = FirestoreService();
+
   // Oyun değişkenleri
   double score = 0;
   double gameTime = 0.0;
   late Random rnd;
 
+  // UI/Sprite ölçekleme (tablet/telefon ekranına göre)
+  double _uiScale = 1.0;
+
+  // UI ölçek getter'ı
+  double get uiScale => _uiScale;
+
   // Animasyonlu UI için
   double _pulseAnimationValue = 0.0;
+
+  // HealthBar için getter
+  double get pulseAnimationValue => _pulseAnimationValue;
 
   // Skor artışı animasyonu için
   double _scoreAnimationValue = 0.0;
   double _lastScore = 0.0;
-  bool _isScoreAnimating = false;
+  int _displayedScore = 0; // Görünen animasyonlu skor
+
+  // Level animasyonu için
+  double _levelAnimationValue = 0.0;
+  bool _isLevelAnimating = false;
+  bool _levelAnimationCompleted = false;
+  int _previousLevel = 1;
+  Color _currentBackgroundColor = const Color(0xFF87CEEB);
+  Color _targetBackgroundColor = const Color(0xFF87CEEB);
+  double _colorTransitionProgress = 0.0;
 
   // Level sistemi
   int currentLevel = 1;
   double enemySpeedMultiplier = 1.0;
   double spawnRateMultiplier = 1.0;
 
+  // Power-up etkileri
+  double tapRadiusMultiplier = 1.0; // speed buff etkisi için dokunma yarıçapı
+  bool shieldActive = false;
+  bool freezeActive = false;
+  double scoreMultiplier = 1.0;
+
+  late Timer? _speedTimer = null;
+  late Timer? _shieldTimer = null;
+  late Timer? _freezeTimer = null;
+  late Timer? _multiHitTimer = null;
+
   // Level hesaplama ve güncelleme
   void _updateLevel() {
-    final newLevel = (score / 100).floor() + 1; // Her 100 skorda level artışı
+    final newLevel = (score / 10).floor() + 1; // Her 100 skorda level artışı
 
     if (newLevel > currentLevel) {
+      _previousLevel = currentLevel;
       currentLevel = newLevel;
+
+      // Arka plan renk geçişini başlat
+      _startColorTransition();
+
+      // Level animasyonunu başlat
+      _isLevelAnimating = true;
+      _levelAnimationValue = 0.0;
+
       _updateGameSpeed();
-      print("Level $currentLevel'e yükseldin! Oyun hızlandı!");
+
+      // Pasta sprite'ını yeni boyutta yeniden oluştur
+      // if (player.parent != null) {
+      //   // Level'e göre pasta boyutunu hesapla (40px + (level-1)*3px, max 100px)
+      //   final baseSize = 40.0;
+      //   final sizePerLevel = 3.0;
+      //   final maxSize = 100.0;
+      //   final levelGrowth = (currentLevel - 1) * sizePerLevel;
+      //   final targetSizePx = (baseSize + levelGrowth).clamp(40.0, maxSize);
+
+      //   // Player boyutunu güncelle
+      //   player.size = Vector2(targetSizePx * _uiScale, targetSizePx * _uiScale);
+
+      //   // Sprite'ı güncelle
+      //   player.sprite = _createEnhancedCakeSprite(scale: _uiScale);
+      //   print(
+      //       "Pasta boyutu level $currentLevel için güncellendi: ${targetSizePx}px");
+      // }
+
+      // Analytics: Level up event'i
+      _analytics.logLevelUp(
+        newLevel: currentLevel,
+        score: score.toInt(),
+        gameTime: gameTime,
+      );
+    }
+  }
+
+  // Arka plan renk geçişini başlat
+  void _startColorTransition() {
+    _currentBackgroundColor = _getColorForLevel(_previousLevel);
+    _targetBackgroundColor = _getColorForLevel(currentLevel);
+    _colorTransitionProgress = 0.0;
+  }
+
+  // İki renk arasında interpolation
+  Color _interpolateColor(Color start, Color end, double progress) {
+    progress = progress.clamp(0.0, 1.0);
+    return Color.fromRGBO(
+      (start.red + (end.red - start.red) * progress).round(),
+      (start.green + (end.green - start.green) * progress).round(),
+      (start.blue + (end.blue - start.blue) * progress).round(),
+      start.opacity,
+    );
+  }
+
+  // Level'e göre renk döndür
+  Color _getColorForLevel(int level) {
+    if (level <= 3) {
+      return const Color(0xFF87CEEB); // Açık mavi
+    } else if (level <= 6) {
+      return const Color(0xFF70C3FF); // Canlı mavi
+    } else if (level <= 9) {
+      return const Color(0xFF5A9FD4); // Derin mavi
+    } else if (level <= 12) {
+      return const Color(0xFFFFB347); // Sarı-Turuncu
+    } else if (level <= 15) {
+      return const Color(0xFFFF8C94); // Açık kırmızı
+    } else if (level <= 18) {
+      return const Color(0xFFFF6B9D); // Pembe-Kırmızı
+    } else if (level <= 21) {
+      return const Color(0xFFDDA0DD); // Mor
+    } else {
+      return const Color(0xFF9370DB); // Koyu mor
     }
   }
 
@@ -73,8 +192,8 @@ class GameController extends FlameGame
     } else {
       // 10. level'dan sonra yavaş artış
       // İlk 10 level'daki artışı koru + sonraki level'lar için küçük artışlar
-      final baseSpeedIncrease = 9 * 0.3; // İlk 10 level'daki toplam artış
-      final baseSpawnIncrease = 9 * 0.25; // İlk 10 level'daki toplam artış
+      const baseSpeedIncrease = 9 * 0.3; // İlk 10 level'daki toplam artış
+      const baseSpawnIncrease = 9 * 0.25; // İlk 10 level'daki toplam artış
 
       final additionalLevels = currentLevel - 10;
       speedIncrease = baseSpeedIncrease +
@@ -91,20 +210,19 @@ class GameController extends FlameGame
 
     // EnemyManager spawn hızını güncelle
     enemyManager.updateSpawnRate();
-
-    print(
-        "Level $currentLevel - Düşman hızı: ${enemySpeedMultiplier.toStringAsFixed(2)}x, Spawn hızı: ${spawnRateMultiplier.toStringAsFixed(2)}x");
+    // Power-up spawn hızını da güncelle
+    powerUpManager.updateSpawnRate();
   }
 
   // Pasta yer değiştirme
   late Timer pastaMoveTimer;
 
   // Sprite'lar
-  late Sprite spriteCake;
-  late Sprite spriteExplosion;
-  late Sprite spriteAnt;
-  late Sprite spriteSpider;
-  late Sprite spriteCockroach;
+  // late Sprite spriteCake;
+  // late Sprite spriteExplosion;
+  // late Sprite spriteAnt;
+  // late Sprite spriteSpider;
+  // late Sprite spriteCockroach;
 
   @override
   Future<void>? onLoad() async {
@@ -114,8 +232,14 @@ class GameController extends FlameGame
     // Oyun durumunu başlat
     gameState = GameState.start;
 
+    // Ekran boyutuna göre ölçek belirle (kısa kenara göre)
+    // Tablette çok büyük gözükmemesi için ölçeği daha düşük tutuyoruz
+    final minDim = min(size.x, size.y);
+    // Telefon ve tablet için daha dengeli ölçek: minDim/800 ile daha küçük
+    _uiScale = (minDim / 800).clamp(0.8, 1.5).toDouble();
+
     // Sprite'ları yükle
-    await _loadSprites();
+    // await _loadSprites();
 
     // Player'ı oluştur
     _createPlayer();
@@ -123,8 +247,17 @@ class GameController extends FlameGame
     // EnemyManager'ı oluştur
     _createEnemyManager();
 
+    // PowerUpManager'ı oluştur
+    _createPowerUpManager();
+
     // HealthBar'ı oluştur
     _createHealthBar();
+
+    // Interstitial reklamı yükle
+    _adMobService.loadInterstitialAd();
+
+    // Rewarded reklamı yükle
+    _adMobService.loadRewardedAd();
 
     // PauseMenu'yu oluştur
     _createPauseMenu();
@@ -134,63 +267,88 @@ class GameController extends FlameGame
     pastaMoveTimer.start();
 
     gameState = GameState.playing;
+
+    // Müzik zaten ana ekranda başlatıldı, oyunda devam ediyor olacak
+    // Eğer müzik kapalıysa açılmış olabilir, resume yap
+    SoundManager.resumeBackgroundMusic();
+
+    // Analytics: Oyun başlatma event'i
+    _analytics.logGameStart();
   }
 
-  Future<void> _loadSprites() async {
-    try {
-      print("Sprite'lar yükleniyor...");
-      // Temel sprite'ları yükle
-      await images.loadAll(["cake.png", "explosion.png", "hearth.png"]);
+  // Future<void> _loadSprites() async {
+  //   try {
+  //     print("Sprite'lar yükleniyor...");
+  //     // Temel sprite'ları yükle
+  //     await images.loadAll(["cake.png", "explosion.png", "hearth.png"]);
 
-      // Pasta sprite'ını oluştur
-      spriteCake = _createEnhancedCakeSprite();
-      print("Pasta sprite oluşturuldu");
-      spriteExplosion = Sprite(images.fromCache("explosion.png"));
+  //     // Pasta sprite'ını oluştur (ölçekli)
+  //     spriteCake = _createEnhancedCakeSprite(scale: _uiScale);
+  //     print("Pasta sprite oluşturuldu");
+  //     spriteExplosion = Sprite(images.fromCache("explosion.png"));
 
-      // Böcek sprite'larını oluştur
-      spriteAnt = _createBugSprite(Color(0xFF8B4513), "ANT");
-      spriteSpider = _createBugSprite(Color(0xFF000000), "SPIDER");
-      spriteCockroach = _createBugSprite(Color(0xFF654321), "COCKROACH");
-      print("Tüm sprite'lar başarıyla yüklendi");
-    } catch (e) {
-      print("Sprite yükleme hatası: $e");
-      // Fallback sprite'lar oluştur
-      spriteCake = _createSimpleCakeSprite();
-      print("Fallback pasta sprite oluşturuldu");
-      spriteExplosion = _createSimpleExplosionSprite();
-      spriteAnt = _createSimpleBugSprite(Color(0xFF8B4513));
-      spriteSpider = _createSimpleBugSprite(Color(0xFF000000));
-      spriteCockroach = _createSimpleBugSprite(Color(0xFF654321));
-    }
-  }
+  //     // Böcek sprite'larını oluştur (ölçekli)
+  //     spriteAnt =
+  //         _createBugSprite(const Color(0xFF8B4513), "ANT", scale: _uiScale);
+  //     spriteSpider =
+  //         _createBugSprite(const Color(0xFF000000), "SPIDER", scale: _uiScale);
+  //     spriteCockroach = _createBugSprite(const Color(0xFF654321), "COCKROACH",
+  //         scale: _uiScale);
+  //     print("Tüm sprite'lar başarıyla yüklendi");
+  //   } catch (e) {
+  //     print("Sprite yükleme hatası: $e");
+  //     // Fallback sprite'lar oluştur
+  //     // spriteCake = _createSimpleCakeSprite(scale: _uiScale);
+  //     // print("Fallback pasta sprite oluşturuldu");
+  //     // spriteExplosion = _createSimpleExplosionSprite();
+  //     // spriteAnt =
+  //     //     _createSimpleBugSprite(const Color(0xFF8B4513), scale: _uiScale);
+  //     // spriteSpider =
+  //     //     _createSimpleBugSprite(const Color(0xFF000000), scale: _uiScale);
+  //     // spriteCockroach =
+  //     //     _createSimpleBugSprite(const Color(0xFF654321), scale: _uiScale);
+  //   }
+  // }
 
   void _createPlayer() {
-    print("=== PLAYER OLUŞTURULUYOR ===");
-    print("SpriteCake oluşturuldu");
-    print("Game Size: $size");
-
     player = Player(
-      sprite: spriteCake,
-      size: Vector2(80, 80),
+      sprite: createEnhancedCakeSprite(scale: _uiScale),
+      size: Vector2(85 * _uiScale, 85 * _uiScale),
       position: size / 2,
       gameController: this,
     );
     player.anchor = Anchor.center;
 
-    print(
-        "Player oluşturuldu - Position: ${player.position}, Size: ${player.size}");
-    print("Player sprite: ${player.sprite != null}");
-
     add(player);
-    print("Player GameController'a eklendi");
   }
 
   void _createEnemyManager() {
     enemyManager = EnemyManager(
       gameController: this,
-      sprites: [spriteAnt, spriteSpider, spriteCockroach],
+      sprites: [
+        _createBugSprite(
+          const Color(0xFF8B4513),
+          "ANT",
+          scale: _uiScale,
+        ),
+        _createBugSprite(
+          const Color(0xFF000000),
+          "SPIDER",
+          scale: _uiScale,
+        ),
+        _createBugSprite(
+          const ui.Color.fromARGB(255, 150, 116, 83),
+          "COCKROACH",
+          scale: _uiScale,
+        )
+      ],
     );
     add(enemyManager);
+  }
+
+  void _createPowerUpManager() {
+    powerUpManager = PowerUpManager(gameController: this);
+    add(powerUpManager);
   }
 
   void _createHealthBar() {
@@ -215,89 +373,172 @@ class GameController extends FlameGame
     _isPaused = true;
     pauseEngine();
 
+    // Arka plan müziğini duraklat
+    SoundManager.pauseBackgroundMusic();
+
     showDialog(
       context: _context!,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text(
-            'OYUN DURAKLADI',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            constraints: const BoxConstraints(maxHeight: 500),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF2D3436),
+                  Color(0xFF636E72),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
             ),
-            textAlign: TextAlign.center,
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    resumeGame();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                  ),
-                  child: const Text(
-                    'DEVAM ET',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Pause ikonu ve başlık
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(Icons.pause_circle_filled,
+                          size: 40, color: Colors.white),
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    Text(
+                      LocaleKeys.game_paused.tr(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Banner reklam
+                    BannerAdWidget(
+                      adUnitId: AdMobService.bannerAdPauseDialogUnitId,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Devam et butonu - ana aksiyon
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          resumeGame();
+                        },
+                        icon: const Icon(Icons.play_arrow_rounded,
+                            size: 28, color: Colors.white),
+                        label: Text(
+                          LocaleKeys.continue_game.tr(),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: Colors.white,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2ED573),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          elevation: 8,
+                          shadowColor: const Color(0xFF2ED573).withOpacity(0.5),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Diğer butonlar - 2 sütun kompakt
+                    Row(
+                      children: [
+                        // Yeniden başla
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              restartGame();
+                            },
+                            icon: const Icon(Icons.refresh, size: 22),
+                            label: Text(
+                              LocaleKeys.restart_game.tr(),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFA502),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+
+                        // Ana menü
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              goToMainMenu();
+                            },
+                            icon: const Icon(Icons.home, size: 22),
+                            label: Text(
+                              LocaleKeys.main_menu.tr().toUpperCase(),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF74B9FF),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    restartGame();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                  ),
-                  child: const Text(
-                    'YENİDEN BAŞLAT',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    goToMainMenu();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                  ),
-                  child: const Text(
-                    'ANA MENÜ',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -309,24 +550,39 @@ class GameController extends FlameGame
     _isPaused = false;
     resumeEngine();
     gameState = GameState.playing;
+
+    // Arka plan müziğini devam ettir
+    SoundManager.resumeBackgroundMusic();
   }
 
   // Oyunu yeniden başlatma
   void restartGame() {
-    print("=== OYUN YENİDEN BAŞLATILIYOR ===");
     _isPaused = false;
     resumeEngine();
 
     // Oyunu yeniden başlatmak için gerekli işlemler
     score = 0;
+    _displayedScore = 0; // Animasyonlu skor sıfırla
     gameTime = 0.0;
     player.resetHealth();
 
     // Level'i sıfırla
     currentLevel = 1;
+    _previousLevel = 1;
     enemySpeedMultiplier = 1.0;
     spawnRateMultiplier = 1.0;
     enemyManager.updateSpawnRate();
+    powerUpManager.updateSpawnRate();
+
+    // Animasyonları sıfırla
+    _isLevelAnimating = false;
+    _levelAnimationValue = 0.0;
+    _levelAnimationCompleted = false;
+
+    // Arka plan rengini ilk renge sıfırla
+    _currentBackgroundColor = const Color(0xFF87CEEB);
+    _targetBackgroundColor = const Color(0xFF87CEEB);
+    _colorTransitionProgress = 1.0;
 
     // Düşmanları tam olarak temizle
     for (final enemy in enemyManager.enemies) {
@@ -344,42 +600,77 @@ class GameController extends FlameGame
     // Oyun durumunu playing olarak ayarla
     gameState = GameState.playing;
 
-    print("Oyun yeniden başlatıldı!");
+    // Arka plan müziğini başlat
+    SoundManager.startBackgroundMusic();
+  }
+
+  // Ses ayarları için getter'lar (artık SoundManager kullanılıyor)
+
+  // Öldürülen düşman sayısını hesapla
+  int _getEnemiesKilledCount() {
+    // Skor bazlı tahmin (her düşman için ortalama puan)
+    return score.toInt(); // Her düşman için 10 puan varsayımı
   }
 
   // Oyun bitişi
   void _gameOver() {
-    print("=== _GAMEOVER METODU ÇAĞRILDI ===");
     gameState = GameState.end;
     pauseEngine();
 
-    print("=== OYUN BİTTİ ===");
-    print("Final Skor: $score");
-    print("Oyun Süresi: ${gameTime.toStringAsFixed(1)} saniye");
-    print("Context durumu: ${_context != null}");
+    // Arka plan müziğini durdur
+    SoundManager.stopBackgroundMusic();
+
+    // Analytics: Oyun bitiş event'i
+    _analytics.logGameEnd(
+      score: score.toInt(),
+      gameTime: gameTime,
+      level: currentLevel,
+      enemiesKilled: _getEnemiesKilledCount(),
+    );
+
+    // High score kaydet
+    _saveHighScore();
+
+    // Interstitial reklamı göster (eğer yüklendiyse)
+    if (_adMobService.isInterstitialAdLoaded) {
+      _adMobService.showInterstitialAd();
+    }
 
     // Oyun bitiş ekranını göster
     showGameOverDialog();
   }
 
+  // High score kaydetme
+  Future<void> _saveHighScore() async {
+    try {
+      final nickname = await _firestoreService.getNickname();
+      if (nickname != null) {
+        final scoreInt = score.toInt();
+
+        // Firestore'a kaydet (score, level ve süre ile birlikte)
+        await _firestoreService.saveHighScore(
+          nickname,
+          scoreInt,
+          level: currentLevel,
+          gameTime: gameTime,
+        );
+
+        // Local high score'u güncelle
+        await _firestoreService.updateLocalHighScore(scoreInt);
+      } else {}
+    } catch (e) {
+      print('Error saving high score: $e');
+    }
+  }
+
   // Oyun bitiş dialog'u
   void showGameOverDialog() {
-    print("=== SHOWGAMEOVERDIALOG METODU ÇAĞRILDI ===");
-    print("Context null mu: ${_context == null}");
-
     if (_context == null) {
-      print("CONTEXT NULL! Dialog gösterilemiyor!");
       return;
     }
 
-    print("=== GAME OVER DIALOG GÖSTERİLİYOR ===");
-    print("Final Skor: $score");
-    print("Oyun Süresi: ${gameTime.toStringAsFixed(1)} saniye");
-    print("Context: $_context");
-
     // Dialog'u bir sonraki frame'e geciktir
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      print("PostFrameCallback çağrıldı - Dialog gösteriliyor");
       _showDialogSafely();
     });
   }
@@ -388,7 +679,6 @@ class GameController extends FlameGame
   void _showDialogSafely() {
     try {
       if (_context == null) {
-        print("Context hala null!");
         return;
       }
 
@@ -396,177 +686,377 @@ class GameController extends FlameGame
         context: _context!,
         barrierDismissible: false,
         builder: (BuildContext context) {
-          print("Dialog builder çağrıldı!");
-          return AlertDialog(
-            backgroundColor: Colors.black.withOpacity(0.95),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(25),
-              side: BorderSide(color: Colors.red, width: 3),
-            ),
-            title: Column(
-              children: [
-                Icon(Icons.sports_esports, color: Colors.red, size: 40),
-                SizedBox(height: 10),
-                Text(
-                  'GAME OVER!',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black,
-                        offset: Offset(2, 2),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              constraints: const BoxConstraints(maxHeight: 600),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF2D3436),
+                    Color(0xFF636E72),
+                  ],
                 ),
-                Text(
-                  'OYUN BİTTİ!',
-                  style: TextStyle(
-                    color: Colors.orange,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                  ),
+                borderRadius: BorderRadius.circular(25),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 2,
                 ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(
-                        color: Colors.red.withOpacity(0.5), width: 1),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Final Skor: $score',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Oyun Süresi: ${gameTime.toStringAsFixed(1)} saniye',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 20),
-                Text(
-                  '🍰 Pasta yenildi! Daha iyi korumaya çalışın! 🍰',
-                  style: TextStyle(
-                    color: Colors.orange,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-            actions: [
-              Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        restartGame();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        padding: EdgeInsets.symmetric(vertical: 15),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        elevation: 5,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.refresh, color: Colors.white),
-                          SizedBox(width: 8),
-                          Text(
-                            'YENİDEN BAŞLA',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        goToMainMenu();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        padding: EdgeInsets.symmetric(vertical: 15),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        elevation: 5,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.home, color: Colors.white),
-                          SizedBox(width: 8),
-                          Text(
-                            'ANA MENÜ',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.5),
+                    blurRadius: 20,
+                    spreadRadius: 5,
                   ),
                 ],
               ),
-            ],
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Pasta ve başlık
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                            width: 2,
+                          ),
+                        ),
+                        child: const Text('🍰', style: TextStyle(fontSize: 40)),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        LocaleKeys.game_over.tr(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // İstatistikler - yan yana kompakt
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _buildCompactStat('💰', '${score.toInt()}',
+                              LocaleKeys.stat_score.tr()),
+                          _buildCompactStat(
+                              '⏱️',
+                              '${gameTime.toStringAsFixed(0)}s',
+                              LocaleKeys.stat_time.tr()),
+                          _buildCompactStat('🌟', '$currentLevel',
+                              LocaleKeys.stat_level.tr()),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Ödüllü reklam - GÖZE ÇARPICI
+                      if (_adMobService.isRewardedAdLoaded) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFFD700).withOpacity(0.4),
+                                blurRadius: 15,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              ElevatedButton(
+                                onPressed: () => _watchRewardedAd(),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.transparent,
+                                  foregroundColor: Colors.black,
+                                  shadowColor: Colors.transparent,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(15),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.play_circle_filled,
+                                        size: 28, color: Colors.black),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      LocaleKeys.watch_ad_for_life.tr(),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: Colors.black,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                LocaleKeys.watch_ad_subtitle.tr(),
+                                style: const TextStyle(
+                                  color: Colors.black87,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Diğer butonlar - 2 sütun kompakt
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                restartGame();
+                              },
+                              icon: const Icon(Icons.refresh, size: 22),
+                              label: Text(
+                                LocaleKeys.restart_game.tr(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2ED573),
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                goToMainMenu();
+                              },
+                              icon: const Icon(Icons.home, size: 22),
+                              label: Text(
+                                LocaleKeys.main_menu.tr().toUpperCase(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF74B9FF),
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           );
         },
       );
     } catch (e) {
-      print("Dialog gösterilirken hata: $e");
+      // Dialog gösterilirken hata oluştu
+    }
+  }
+
+  // Power-up efektleri
+  void activateSpeedBoost({int durationSeconds = 8}) {
+    tapRadiusMultiplier = 1.8; // Dokunma yarıçapını daha fazla büyüt
+    _speedTimer?.stop();
+    _speedTimer = Timer(durationSeconds.toDouble(), onTick: () {
+      tapRadiusMultiplier = 1.0;
+    });
+    _speedTimer!.start();
+  }
+
+  void activateShield({int durationSeconds = 6}) {
+    shieldActive = true;
+    _shieldTimer?.stop();
+    _shieldTimer = Timer(durationSeconds.toDouble(), onTick: () {
+      shieldActive = false;
+    });
+    _shieldTimer!.start();
+  }
+
+  void activateMultiHit({int durationSeconds = 10}) {
+    scoreMultiplier = 2.0;
+    _multiHitTimer?.stop();
+    _multiHitTimer = Timer(durationSeconds.toDouble(), onTick: () {
+      scoreMultiplier = 1.0;
+    });
+    _multiHitTimer!.start();
+  }
+
+  void activateFreeze({int durationSeconds = 4}) {
+    freezeActive = true;
+    _freezeTimer?.stop();
+    _freezeTimer = Timer(durationSeconds.toDouble(), onTick: () {
+      freezeActive = false;
+    });
+    _freezeTimer!.start();
+  }
+
+  void triggerBomb() {
+    final enemiesToKill =
+        List<Enemy>.from(enemyManager.enemies).where((e) => !e.isDead).toList();
+    for (final enemy in enemiesToKill) {
+      enemy.isDead = true;
+      add(ExplosionEffect(position: enemy.position));
+      add(BloodEffect(position: enemy.position));
+      score +=
+          (enemy.isComboEnemy ? enemy.comboMultiplier : 1) * scoreMultiplier;
+      enemy.removeFromParent();
+      enemyManager.enemies.remove(enemy);
+    }
+  }
+
+  // Kompakt istatistik widget'ı
+  Widget _buildCompactStat(String emoji, String value, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 24)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.7),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Ödüllü reklam izleme
+  void _watchRewardedAd() {
+    _adMobService.showRewardedAd(
+      onRewarded: (reward) {
+        // Analytics
+        _analytics.logCustomEvent(
+          eventName: 'rewarded_ad_watched',
+          parameters: {
+            'score': score.toInt(),
+            'level': currentLevel,
+            'reward_amount': reward.amount,
+            'reward_type': reward.type,
+          },
+        );
+
+        // Oyunu devam ettir
+        _continueGameAfterReward();
+      },
+    );
+  }
+
+  // Ödül sonrası oyunu devam ettirme
+  void _continueGameAfterReward() {
+    // İlk önce dialog'u kapat
+    if (_context != null) {
+      Navigator.of(_context!).pop();
     }
 
-    print("Dialog gösterimi tamamlandı");
+    // Dialog kapandıktan sonra küçük bir gecikme ekle
+    Future.delayed(const Duration(milliseconds: 300), () {
+      // Oyun durumunu playing yap
+      gameState = GameState.playing;
+
+      // Motoru devam ettir
+      resumeEngine();
+
+      // Müziği başlat
+      SoundManager.startBackgroundMusic();
+
+      // Canı fulle
+      player.currentHealth = 100.0;
+
+      // Pause durumunu sıfırla
+      _isPaused = false;
+    });
   }
 
   // Ana menüye dönme
   void goToMainMenu() {
-    print("=== ANA MENÜYE DÖNÜLÜYOR ===");
     _isPaused = false;
     resumeEngine();
 
     // Oyunu sıfırla
     score = 0;
+    _displayedScore = 0; // Animasyonlu skor sıfırla
     gameTime = 0.0;
     player.resetHealth();
+
+    // Level'i sıfırla
+    currentLevel = 1;
+    _previousLevel = 1;
+    enemySpeedMultiplier = 1.0;
+    spawnRateMultiplier = 1.0;
+
+    // Animasyonları sıfırla
+    _isLevelAnimating = false;
+    _levelAnimationValue = 0.0;
+    _levelAnimationCompleted = false;
+
+    // Arka plan rengini ilk renge sıfırla
+    _currentBackgroundColor = const Color(0xFF87CEEB);
+    _targetBackgroundColor = const Color(0xFF87CEEB);
+    _colorTransitionProgress = 1.0;
 
     // Düşmanları temizle
     for (final enemy in enemyManager.enemies) {
@@ -580,6 +1070,9 @@ class GameController extends FlameGame
     // Timer'ları durdur
     pastaMoveTimer.stop();
 
+    // Müziği durdurma, ana ekranda devam etsin
+    // Ana ekrana döndüğünde müzik zaten çalıyor olacak
+
     // Oyun durumunu start olarak ayarla
     gameState = GameState.start;
 
@@ -590,15 +1083,13 @@ class GameController extends FlameGame
         (route) => false,
       );
     }
-
-    print("Ana menüye dönüldü!");
   }
 
   void _movePasta() {
     if (gameState != GameState.playing) return;
 
     // Ekranın ortasında rastgele bir pozisyon seç
-    final margin = 150.0;
+    const margin = 150.0;
     final centerX = size.x / 2;
     final centerY = size.y / 2;
 
@@ -606,14 +1097,28 @@ class GameController extends FlameGame
     final newY = centerY + (rnd.nextDouble() - 0.5) * margin;
 
     player.updatePosition(Vector2(newX, newY));
+  }
 
-    print("Pasta yeni pozisyona taşındı: $newX, $newY");
+  // Level'e göre arka plan rengi (animasyonlu geçiş ile)
+  Color get _backgroundColor {
+    if (_colorTransitionProgress < 1.0) {
+      // Animasyonlu geçiş
+      return _interpolateColor(
+        _currentBackgroundColor,
+        _targetBackgroundColor,
+        _colorTransitionProgress,
+      );
+    }
+    return _targetBackgroundColor;
   }
 
   @override
   void render(Canvas canvas) {
-    // Arka plan rengi
-    canvas.drawColor(Color(0xFF87CEEB), BlendMode.srcOver);
+    // Arka plan rengi - level'e göre dinamik
+    canvas.drawColor(_backgroundColor, BlendMode.srcOver);
+
+    // Büyük skor gösterimi (arka planda, ortada)
+    _renderBigScore(canvas);
 
     // UI'yi render et
     _renderUI(canvas);
@@ -624,650 +1129,151 @@ class GameController extends FlameGame
     super.render(canvas);
   }
 
-  void _renderUI(Canvas canvas) {
-    // SafeArea için padding
-    const safeAreaPadding = 20.0;
+  // Arka planda büyük skor gösterimi
+  void _renderBigScore(Canvas canvas) {
+    final centerX = size.x / 2;
+    final centerY = size.y / 2;
 
-    // Modern skor container'ı
-    _renderScoreContainer(canvas, safeAreaPadding);
-
-    // Modern can container'ı
-    _renderHealthContainer(canvas, safeAreaPadding);
-
-    // Level container'ı
-    _renderLevelContainer(canvas, safeAreaPadding);
-
-    // Pause butonu - daha düzgün tasarım
-    _renderPauseButton(canvas, safeAreaPadding);
-  }
-
-  void _renderScoreContainer(Canvas canvas, double safeAreaPadding) {
-    // Skor artışı animasyonu için pulse efekti
-    final scorePulseScale = 1.0 + (sin(_pulseAnimationValue * 2) * 0.05);
-    final glowIntensity = (sin(_pulseAnimationValue * 3) + 1) / 2;
-
-    // Skor artışı animasyonu için özel efektler
-    double animationScale = 1.0;
-    double animationGlow = glowIntensity;
-
-    if (_isScoreAnimating) {
-      // Skor artışında büyüme efekti
-      animationScale = 1.0 + (sin(_scoreAnimationValue * pi) * 0.15);
-      animationGlow = glowIntensity + (_scoreAnimationValue * 0.5);
+    // Animasyonlu scale - skor değişirken büyür
+    double scale = 1.0;
+    if (_scoreAnimationValue > 0.0) {
+      final pulse = sin(_scoreAnimationValue * pi * 2);
+      scale = 1.0 + (pulse * 0.12); // Hafif büyüme/küçülme
     }
 
-    // Skor container boyutları - daha büyük ve etkileyici
-    final containerWidth = 160.0;
-    final containerHeight = 60.0;
-    final containerX = safeAreaPadding;
-    final containerY = safeAreaPadding;
-
-    // Container arka planı
-    final containerRect = Rect.fromLTWH(
-      containerX,
-      containerY,
-      containerWidth,
-      containerHeight,
-    );
-
-    // Böcek ezme temasına uygun gradient - altın/sarı tonları
-    final gradient = ui.Gradient.linear(
-      Offset(containerX, containerY),
-      Offset(containerX + containerWidth, containerY + containerHeight),
-      [
-        const Color(0xFFFFD700).withOpacity(0.9), // Altın
-        const Color(0xFFFF8C00).withOpacity(0.9), // Koyu turuncu
-      ],
-    );
-
-    final containerPaint = Paint()..shader = gradient;
-
-    // Glow efekti için dış gölge - animasyonlu
-    final glowPaint = Paint()
-      ..color = const Color(0xFFFFD700).withOpacity(0.3 * animationGlow)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(containerX - 2, containerY - 2, containerWidth + 4,
-            containerHeight + 4),
-        const Radius.circular(16),
-      ),
-      glowPaint,
-    );
-
-    // Container çizimi
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        containerRect,
-        const Radius.circular(15),
-      ),
-      containerPaint,
-    );
-
-    // Parlak kenarlık
-    final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        containerRect,
-        const Radius.circular(15),
-      ),
-      borderPaint,
-    );
-
-    // İç gölge efekti
-    final innerShadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.2)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(containerX + 2, containerY + 2, containerWidth - 4,
-            containerHeight - 4),
-        const Radius.circular(13),
-      ),
-      innerShadowPaint,
-    );
-
-    // Böcek ezme ikonu - çekiç/böcek teması (animasyonlu)
-    _drawBugSmashIcon(canvas, containerX + 25, containerY + 30,
-        scorePulseScale * animationScale);
-
-    // Skor metni - daha büyük ve etkileyici
-    TextPaint scoreText = TextPaint(
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 18,
+    // Glow efekti
+    TextPaint glowText = TextPaint(
+      style: TextStyle(
+        fontSize: 150 * scale,
         fontWeight: FontWeight.bold,
-        shadows: [
-          Shadow(offset: Offset(2, 2), blurRadius: 3, color: Colors.black87),
-          Shadow(offset: Offset(1, 1), blurRadius: 1, color: Colors.black54),
-        ],
+        color: Colors.white.withOpacity(0.08),
+      ),
+    );
+
+    // Glow arka plan
+    glowText.render(
+      canvas,
+      "$_displayedScore",
+      Vector2(centerX, centerY),
+      anchor: Anchor.center,
+    );
+
+    // Ana skor metni - büyük ve yarı saydam
+    TextPaint scoreText = TextPaint(
+      style: TextStyle(
+        fontSize: 150 * scale,
+        fontWeight: FontWeight.bold,
+        color: Colors.white.withOpacity(0.2),
+        letterSpacing: 5,
       ),
     );
 
     scoreText.render(
       canvas,
-      "${score.toInt()}",
-      Vector2(containerX + 55, containerY + 35),
-      anchor: Anchor.centerLeft,
-    );
-
-    // "SKOR" etiketi
-    TextPaint labelText = TextPaint(
-      style: const TextStyle(
-        color: Colors.white70,
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        shadows: [
-          Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black54),
-        ],
-      ),
-    );
-
-    labelText.render(
-      canvas,
-      "SKOR",
-      Vector2(containerX + 55, containerY + 20),
-      anchor: Anchor.centerLeft,
-    );
-
-    // Skor artışı popup efekti
-    if (_isScoreAnimating) {
-      _drawScorePopup(
-          canvas, containerX + containerWidth + 10, containerY + 20);
-    }
-  }
-
-  // Skor artışı popup efekti çizimi
-  void _drawScorePopup(Canvas canvas, double x, double y) {
-    final popupScale = 1.0 + (sin(_scoreAnimationValue * pi) * 0.3);
-    final popupOpacity = 1.0 - _scoreAnimationValue;
-
-    // Popup arka planı
-    final popupPaint = Paint()
-      ..color = const Color(0xFF4CAF50).withOpacity(0.9 * popupOpacity)
-      ..style = PaintingStyle.fill;
-
-    final popupRect = Rect.fromCenter(
-      center: Offset(x, y),
-      width: 60 * popupScale,
-      height: 25 * popupScale,
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(popupRect, const Radius.circular(12)),
-      popupPaint,
-    );
-
-    // Popup kenarlığı
-    final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8 * popupOpacity)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(popupRect, const Radius.circular(12)),
-      borderPaint,
-    );
-
-    // "+10" metni
-    TextPaint popupText = TextPaint(
-      style: TextStyle(
-        color: Colors.white,
-        fontSize: 16 * popupScale,
-        fontWeight: FontWeight.bold,
-        shadows: [
-          Shadow(
-              offset: const Offset(1, 1),
-              blurRadius: 2,
-              color: Colors.black.withOpacity(popupOpacity)),
-        ],
-      ),
-    );
-
-    popupText.render(
-      canvas,
-      "+10",
-      Vector2(x, y),
+      "$_displayedScore",
+      Vector2(centerX, centerY),
       anchor: Anchor.center,
     );
   }
 
-  // Böcek ezme ikonu çizimi
-  void _drawBugSmashIcon(Canvas canvas, double x, double y, double scale) {
-    // Çekiç başı
-    final hammerPaint = Paint()
-      ..color = const Color(0xFF8B4513) // Kahverengi
-      ..style = PaintingStyle.fill;
+  void _renderUI(Canvas canvas) {
+    // MediaQuery'den safe area padding al
+    double topPadding = 0;
+    double leftPadding = 0;
+    double rightPadding = 0;
 
-    final hammerRect = Rect.fromCenter(
-      center: Offset(x, y - 5),
-      width: 12 * scale,
-      height: 8 * scale,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(hammerRect, const Radius.circular(4)),
-      hammerPaint,
-    );
+    if (_context != null) {
+      try {
+        final mediaQuery = MediaQuery.of(_context!);
+        topPadding = mediaQuery.padding.top;
+        leftPadding = mediaQuery.padding.left;
+        rightPadding = mediaQuery.padding.right;
+      } catch (e) {
+        print("MediaQuery error: $e");
+      }
+    }
 
-    // Çekiç sapı
-    final handlePaint = Paint()
-      ..color = const Color(0xFF654321) // Koyu kahverengi
-      ..style = PaintingStyle.fill
-      ..strokeWidth = 3;
+    // Ekstra güvenlik padding'i
+    const safeAreaPadding = 10.0;
+    final topPaddingWithSafeArea = topPadding + safeAreaPadding;
 
-    canvas.drawLine(
-      Offset(x, y - 5),
-      Offset(x, y + 8),
-      handlePaint,
-    );
+    final yPos = topPaddingWithSafeArea;
 
-    // Böcek gövdesi (ezilmiş)
-    final bugPaint = Paint()
-      ..color = const Color(0xFF8B4513) // Kahverengi
-      ..style = PaintingStyle.fill;
+    // Level gösteriminin x pozisyonu - ekran genişliğine göre ayarla
+    final levelXPos = leftPadding + safeAreaPadding + 10.0;
 
-    canvas.drawOval(
-      Rect.fromCenter(
-          center: Offset(x, y + 3), width: 8 * scale, height: 4 * scale),
-      bugPaint,
-    );
+    // Sadece level göster (can ekranın altında)
+    _renderModernLevel(canvas, levelXPos, yPos);
 
-    // Böcek gözleri
-    final eyePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(x - 2, y + 2), 1 * scale, eyePaint);
-    canvas.drawCircle(Offset(x + 2, y + 2), 1 * scale, eyePaint);
-
-    // Parlak efekt
-    final shinePaint = Paint()
-      ..color = Colors.white.withOpacity(0.6)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(x - 1, y - 6), 2 * scale, shinePaint);
+    // Pause butonu (sağ üst köşede) - ekran genişliğine göre ayarla
+    final pauseButtonXPos = size.x - 50.0 - rightPadding - safeAreaPadding;
+    _renderModernPauseButton(canvas, pauseButtonXPos, yPos);
   }
 
-  void _renderHealthContainer(Canvas canvas, double safeAreaPadding) {
-    // Can durumuna göre animasyon değerleri
-    final healthRatio = player.currentHealth / 100.0;
-    final heartPulseScale = 1.0 + (sin(_pulseAnimationValue * 4) * 0.08);
-    final glowIntensity = healthRatio * (sin(_pulseAnimationValue * 2) + 1) / 2;
+  void _renderModernLevel(Canvas canvas, double x, double y) {
+    // Modern minimal level gösterimi
+    const containerWidth = 55.0;
+    const containerHeight = 40.0;
 
-    // Can durumuna göre renk değişimi
-    final isLowHealth = healthRatio < 0.3;
-    final isCriticalHealth = healthRatio < 0.15;
+    final containerRect = Rect.fromLTWH(x, y, containerWidth, containerHeight);
 
-    // Can container boyutları
-    final containerWidth = 160.0;
-    final containerHeight = 60.0;
-    final containerX = safeAreaPadding;
-    final containerY = safeAreaPadding + 70;
-
-    // Container arka planı
-    final containerRect = Rect.fromLTWH(
-      containerX,
-      containerY,
-      containerWidth,
-      containerHeight,
-    );
-
-    // Can durumuna göre gradient renkleri
-    List<Color> gradientColors;
-    if (isCriticalHealth) {
-      // Kritik can - kırmızı ve yanıp sönen efekt
-      gradientColors = [
-        const Color(0xFFFF0000).withOpacity(0.9), // Kırmızı
-        const Color(0xFFB22222).withOpacity(0.9), // Koyu kırmızı
-      ];
-    } else if (isLowHealth) {
-      // Düşük can - turuncu/kırmızı
-      gradientColors = [
-        const Color(0xFFFF4500).withOpacity(0.9), // Turuncu kırmızı
-        const Color(0xFFCD5C5C).withOpacity(0.9), // Hint kırmızısı
-      ];
-    } else {
-      // Sağlıklı can - yeşil tonları
-      gradientColors = [
-        const Color(0xFF32CD32).withOpacity(0.9), // Lime yeşil
-        const Color(0xFF006400).withOpacity(0.9), // Koyu yeşil
-      ];
-    }
-
-    final gradient = ui.Gradient.linear(
-      Offset(containerX, containerY),
-      Offset(containerX + containerWidth, containerY + containerHeight),
-      gradientColors,
-    );
-
-    final containerPaint = Paint()..shader = gradient;
-
-    // Kritik can durumunda yanıp sönen glow efekti
-    if (isCriticalHealth) {
-      final criticalGlowPaint = Paint()
-        ..color = const Color(0xFFFF0000).withOpacity(0.5 * glowIntensity)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
-
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(containerX - 4, containerY - 4, containerWidth + 8,
-              containerHeight + 8),
-          const Radius.circular(18),
-        ),
-        criticalGlowPaint,
-      );
-    }
-
-    // Normal glow efekti
-    final glowPaint = Paint()
-      ..color = gradientColors.first.withOpacity(0.3 * glowIntensity)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    // Glassmorphism efekti
+    final glassPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..style = PaintingStyle.fill;
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(containerX - 2, containerY - 2, containerWidth + 4,
-            containerHeight + 4),
-        const Radius.circular(16),
-      ),
-      glowPaint,
+      RRect.fromRectAndRadius(containerRect, const Radius.circular(18)),
+      glassPaint,
     );
 
-    // Container çizimi
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        containerRect,
-        const Radius.circular(15),
-      ),
-      containerPaint,
-    );
+    // Level artışında hafif glow efekti
+    double glowIntensity = 0.3;
+    if (_isLevelAnimating || _levelAnimationCompleted) {
+      glowIntensity = 0.6;
+    }
 
-    // Parlak kenarlık
+    // Purple glow border
     final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
+      ..color = const Color(0xFF6C5CE7).withOpacity(glowIntensity)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        containerRect,
-        const Radius.circular(15),
-      ),
+      RRect.fromRectAndRadius(containerRect, const Radius.circular(18)),
       borderPaint,
     );
 
-    // İç gölge efekti
-    final innerShadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.2)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(containerX + 2, containerY + 2, containerWidth - 4,
-            containerHeight - 4),
-        const Radius.circular(13),
-      ),
-      innerShadowPaint,
-    );
-
-    // Animasyonlu kalp ikonu
-    _drawAnimatedHeart(
-        canvas, containerX + 25, containerY + 30, heartPulseScale, healthRatio);
-
-    // Can metni - daha büyük ve etkileyici
-    TextPaint healthText = TextPaint(
-      style: TextStyle(
-        color: Colors.white,
-        fontSize: 18,
-        fontWeight: FontWeight.bold,
-        shadows: [
-          const Shadow(
-              offset: Offset(2, 2), blurRadius: 3, color: Colors.black87),
-          const Shadow(
-              offset: Offset(1, 1), blurRadius: 1, color: Colors.black54),
-        ],
-      ),
-    );
-
-    healthText.render(
-      canvas,
-      "${player.currentHealth.toInt()}",
-      Vector2(containerX + 55, containerY + 35),
-      anchor: Anchor.centerLeft,
-    );
-
-    // "CAN" etiketi
+    // Etiket
     TextPaint labelText = TextPaint(
-      style: const TextStyle(
-        color: Colors.white70,
-        fontSize: 12,
+      style: TextStyle(
+        color: Colors.white.withOpacity(0.7),
+        fontSize: 9,
         fontWeight: FontWeight.w600,
-        shadows: [
-          Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black54),
-        ],
       ),
     );
 
     labelText.render(
-      canvas,
-      "CAN",
-      Vector2(containerX + 55, containerY + 20),
-      anchor: Anchor.centerLeft,
-    );
-
-    // Can barı - görsel gösterge
-    _drawHealthBar(canvas, containerX + 10, containerY + 50,
-        containerWidth - 20, healthRatio);
-  }
-
-  // Animasyonlu kalp ikonu çizimi
-  void _drawAnimatedHeart(
-      Canvas canvas, double x, double y, double scale, double healthRatio) {
-    // Kalp rengi can durumuna göre değişir
-    Color heartColor;
-    if (healthRatio < 0.15) {
-      heartColor = const Color(0xFFFF0000); // Kırmızı
-    } else if (healthRatio < 0.3) {
-      heartColor = const Color(0xFFFF4500); // Turuncu kırmızı
-    } else {
-      heartColor = const Color(0xFF32CD32); // Yeşil
-    }
-
-    final heartPaint = Paint()
-      ..color = heartColor
-      ..style = PaintingStyle.fill;
-
-    // Kalp şekli çizimi
-    final heartPath = Path();
-    final heartSize = 12 * scale;
-
-    // Kalp şekli için bezier eğrileri
-    heartPath.moveTo(x, y + heartSize * 0.3);
-    heartPath.cubicTo(
-      x - heartSize * 0.5,
-      y - heartSize * 0.3,
-      x - heartSize * 0.5,
-      y + heartSize * 0.1,
-      x,
-      y + heartSize * 0.5,
-    );
-    heartPath.cubicTo(
-      x + heartSize * 0.5,
-      y + heartSize * 0.1,
-      x + heartSize * 0.5,
-      y - heartSize * 0.3,
-      x,
-      y + heartSize * 0.3,
-    );
-
-    canvas.drawPath(heartPath, heartPaint);
-
-    // Kalp parlaklığı
-    final shinePaint = Paint()
-      ..color = Colors.white.withOpacity(0.6)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(x - 2, y - 2), 3 * scale, shinePaint);
-  }
-
-  // Can barı çizimi
-  void _drawHealthBar(
-      Canvas canvas, double x, double y, double width, double healthRatio) {
-    final barHeight = 6.0;
-
-    // Arka plan barı
-    final backgroundPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, width, barHeight),
-        const Radius.circular(3),
-      ),
-      backgroundPaint,
-    );
-
-    // Can barı
-    final healthBarWidth = width * healthRatio;
-    Color barColor;
-
-    if (healthRatio < 0.15) {
-      barColor = const Color(0xFFFF0000); // Kırmızı
-    } else if (healthRatio < 0.3) {
-      barColor = const Color(0xFFFF4500); // Turuncu kırmızı
-    } else {
-      barColor = const Color(0xFF32CD32); // Yeşil
-    }
-
-    final healthPaint = Paint()
-      ..color = barColor
-      ..style = PaintingStyle.fill;
-
-    if (healthBarWidth > 0) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, y, healthBarWidth, barHeight),
-          const Radius.circular(3),
+        canvas,
+        "LVL",
+        Vector2(
+          x + containerWidth / 2,
+          y + 10,
         ),
-        healthPaint,
-      );
-    }
+        anchor: Anchor.center);
 
-    // Bar kenarlığı
-    final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, width, barHeight),
-        const Radius.circular(3),
-      ),
-      borderPaint,
-    );
-  }
-
-  void _renderLevelContainer(Canvas canvas, double safeAreaPadding) {
-    // Level artışı animasyonu için özel efektler
-    final levelPulseScale = 1.0 + (sin(_pulseAnimationValue * 1.5) * 0.06);
-    final glowIntensity = (sin(_pulseAnimationValue * 2.5) + 1) / 2;
-
-    // Level container boyutları - daha büyük
-    final containerWidth = 120.0;
-    final containerHeight = 60.0;
-    final containerX = safeAreaPadding;
-    final containerY = safeAreaPadding + 140;
-
-    // Container arka planı
-    final containerRect = Rect.fromLTWH(
-      containerX,
-      containerY,
-      containerWidth,
-      containerHeight,
-    );
-
-    // Level temasına uygun gradient - mor/mavi tonları
-    final gradient = ui.Gradient.linear(
-      Offset(containerX, containerY),
-      Offset(containerX + containerWidth, containerY + containerHeight),
-      [
-        const Color(0xFF9C27B0).withOpacity(0.9), // Mor
-        const Color(0xFF3F51B5).withOpacity(0.9), // İndigo
-      ],
-    );
-
-    final containerPaint = Paint()..shader = gradient;
-
-    // Glow efekti
-    final glowPaint = Paint()
-      ..color = const Color(0xFF9C27B0).withOpacity(0.4 * glowIntensity)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(containerX - 2, containerY - 2, containerWidth + 4,
-            containerHeight + 4),
-        const Radius.circular(16),
-      ),
-      glowPaint,
-    );
-
-    // Container çizimi
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        containerRect,
-        const Radius.circular(15),
-      ),
-      containerPaint,
-    );
-
-    // Parlak kenarlık
-    final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        containerRect,
-        const Radius.circular(15),
-      ),
-      borderPaint,
-    );
-
-    // İç gölge efekti
-    final innerShadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.2)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(containerX + 2, containerY + 2, containerWidth - 4,
-            containerHeight - 4),
-        const Radius.circular(13),
-      ),
-      innerShadowPaint,
-    );
-
-    // Level ikonu - yıldız şekli
-    _drawLevelStar(canvas, containerX + 25, containerY + 30, levelPulseScale);
-
-    // Level metni - daha büyük ve etkileyici
+    // Level metni
     TextPaint levelText = TextPaint(
       style: const TextStyle(
-        color: Colors.white,
-        fontSize: 18,
+        color: Color(0xFF6C5CE7),
+        fontSize: 20,
         fontWeight: FontWeight.bold,
         shadows: [
-          Shadow(offset: Offset(2, 2), blurRadius: 3, color: Colors.black87),
-          Shadow(offset: Offset(1, 1), blurRadius: 1, color: Colors.black54),
+          Shadow(
+            offset: Offset(0, 1),
+            blurRadius: 3,
+            color: Colors.black45,
+          ),
         ],
       ),
     );
@@ -1275,180 +1281,75 @@ class GameController extends FlameGame
     levelText.render(
       canvas,
       "$currentLevel",
-      Vector2(containerX + 55, containerY + 35),
-      anchor: Anchor.centerLeft,
+      Vector2(x + containerWidth / 2, y + 25),
+      anchor: Anchor.center,
     );
-
-    // "LEVEL" etiketi
-    TextPaint labelText = TextPaint(
-      style: const TextStyle(
-        color: Colors.white70,
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        shadows: [
-          Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black54),
-        ],
-      ),
-    );
-
-    labelText.render(
-      canvas,
-      "LEVEL",
-      Vector2(containerX + 55, containerY + 20),
-      anchor: Anchor.centerLeft,
-    );
-
-    // Level progress barı
-    _drawLevelProgressBar(
-        canvas, containerX + 10, containerY + 50, containerWidth - 20);
   }
+
+  // Skor artışı popup efekti çizimi
+
+  // Böcek ezme ikonu çizimi
+
+  // Animasyonlu kalp ikonu çizimi
+
+  // Kompakt kalp ikonu çizimi
+
+  // Kompakt can barı çizimi
+
+  // Kompakt level yıldız ikonu çizimi
+
+  // Can barı çizimi
 
   // Level yıldız ikonu çizimi
-  void _drawLevelStar(Canvas canvas, double x, double y, double scale) {
-    final starPaint = Paint()
-      ..color = const Color(0xFFFFD700) // Altın
-      ..style = PaintingStyle.fill;
-
-    final starSize = 12 * scale;
-    final starPath = Path();
-
-    // 5 köşeli yıldız çizimi
-    for (int i = 0; i < 5; i++) {
-      final angle = (i * 144 - 90) * pi / 180; // 144 derece aralıklarla
-      final radius = starSize;
-      final starX = x + cos(angle) * radius;
-      final starY = y + sin(angle) * radius;
-
-      if (i == 0) {
-        starPath.moveTo(starX, starY);
-      } else {
-        starPath.lineTo(starX, starY);
-      }
-
-      // İç köşe
-      final innerAngle = ((i * 144 + 72) - 90) * pi / 180;
-      final innerRadius = starSize * 0.4;
-      final innerX = x + cos(innerAngle) * innerRadius;
-      final innerY = y + sin(innerAngle) * innerRadius;
-      starPath.lineTo(innerX, innerY);
-    }
-    starPath.close();
-
-    canvas.drawPath(starPath, starPaint);
-
-    // Yıldız parlaklığı
-    final shinePaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(x - 2, y - 2), 3 * scale, shinePaint);
-  }
 
   // Level progress barı çizimi
-  void _drawLevelProgressBar(Canvas canvas, double x, double y, double width) {
-    final barHeight = 6.0;
 
-    // Arka plan barı
-    final backgroundPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
+  void _renderModernPauseButton(Canvas canvas, double x, double y) {
+    // Modern minimal pause butonu
+    const buttonWidth = 40.0;
+    const buttonHeight = 35.0;
+
+    final buttonRect = Rect.fromLTWH(x, y, buttonWidth, buttonHeight);
+
+    // Glassmorphism buton
+    final buttonPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
       ..style = PaintingStyle.fill;
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, width, barHeight),
-        const Radius.circular(3),
-      ),
-      backgroundPaint,
+      RRect.fromRectAndRadius(buttonRect, const Radius.circular(18)),
+      buttonPaint,
     );
 
-    // Level progress hesaplama (her 100 skorda level artışı)
-    final levelProgress = (score % 100) / 100.0;
-    final progressBarWidth = width * levelProgress;
-
-    // Progress barı
-    final progressPaint = Paint()
-      ..color = const Color(0xFFFFD700) // Altın
-      ..style = PaintingStyle.fill;
-
-    if (progressBarWidth > 0) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, y, progressBarWidth, barHeight),
-          const Radius.circular(3),
-        ),
-        progressPaint,
-      );
-    }
-
-    // Bar kenarlığı
+    // Subtle border
     final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.6)
+      ..color = Colors.white.withOpacity(0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, width, barHeight),
-        const Radius.circular(3),
-      ),
-      borderPaint,
-    );
-  }
-
-  void _renderPauseButton(Canvas canvas, double safeAreaPadding) {
-    // Pause butonu boyutları
-    final buttonWidth = 80.0;
-    final buttonHeight = 40.0;
-    final buttonMargin = safeAreaPadding;
-
-    // Buton pozisyonu (sağ üst köşe, SafeArea içinde)
-    final buttonX = size.x - buttonWidth - buttonMargin;
-    final buttonY = safeAreaPadding;
-
-    // Buton arka planı
-    final buttonRect =
-        Rect.fromLTWH(buttonX, buttonY, buttonWidth, buttonHeight);
-    final buttonPaint = Paint()
-      ..color = Colors.black.withOpacity(0.7)
-      ..style = PaintingStyle.fill;
-
-    // Buton kenarlığı
-    final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-
-    // Buton arka planını çiz
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(buttonRect, const Radius.circular(8)),
-      buttonPaint,
-    );
-
-    // Buton kenarlığını çiz
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(buttonRect, const Radius.circular(8)),
+      RRect.fromRectAndRadius(buttonRect, const Radius.circular(18)),
       borderPaint,
     );
 
-    // Pause ikonu (iki dikey çizgi)
+    // Pause ikonu - daha ince
     final iconPaint = Paint()
-      ..color = Colors.white
+      ..color = Colors.white.withOpacity(0.9)
       ..style = PaintingStyle.fill
-      ..strokeWidth = 3.0;
+      ..strokeWidth = 2;
 
-    final iconCenterX = buttonX + buttonWidth / 2;
-    final iconCenterY = buttonY + buttonHeight / 2;
-    final iconSpacing = 6.0;
+    final iconCenterX = x + buttonWidth / 2;
+    final iconCenterY = y + buttonHeight / 2;
+    const iconSpacing = 4.5;
 
-    // İki dikey çizgi çiz
     canvas.drawLine(
-      Offset(iconCenterX - iconSpacing, iconCenterY - 8),
-      Offset(iconCenterX - iconSpacing, iconCenterY + 8),
+      Offset(iconCenterX - iconSpacing, iconCenterY - 5),
+      Offset(iconCenterX - iconSpacing, iconCenterY + 5),
       iconPaint,
     );
     canvas.drawLine(
-      Offset(iconCenterX + iconSpacing, iconCenterY - 8),
-      Offset(iconCenterX + iconSpacing, iconCenterY + 8),
+      Offset(iconCenterX + iconSpacing, iconCenterY - 5),
+      Offset(iconCenterX + iconSpacing, iconCenterY + 5),
       iconPaint,
     );
   }
@@ -1463,18 +1364,17 @@ class GameController extends FlameGame
     for (final enemy in enemiesToCheck) {
       if (enemy.isDead) continue;
 
-      // Temas kontrolü
+      // Temas kontrolü - pastaya daha yakın mesafe
       final distance = player.position.distanceTo(enemy.position);
-      if (distance < 50) {
-        print("=== TEMAS TESPİT EDİLDİ ===");
-        print("Mesafe: $distance");
-        print("Pasta durumu - Can: ${player.currentHealth}");
-        print("Pasta parent: ${player.parent != null}");
-        print("Pasta sprite: ${player.sprite != null}");
-
+      if (distance < 45) {
         // Hasar ver
-        player.takeDamage(5);
+        if (!shieldActive) {
+          player.takeDamage(5);
+        }
         enemy.isDead = true;
+
+        // Hasar sesi çal
+        SoundManager.playDamageSound();
 
         // Düşmanı hemen kaldır - güvenli şekilde
         enemy.removeFromParent();
@@ -1483,10 +1383,6 @@ class GameController extends FlameGame
 
         // Kan efekti
         add(BloodEffect(position: enemy.position));
-
-        print("Pasta hasar aldı! Kalan can: ${player.currentHealth}");
-        print("Hasar sonrası pasta parent: ${player.parent != null}");
-        print("Hasar sonrası pasta sprite: ${player.sprite != null}");
 
         //Oyun bitti mi kontrol et - pasta hiç ölmesin
         if (player.currentHealth <= 0) {
@@ -1509,13 +1405,46 @@ class GameController extends FlameGame
     // Animasyon değerlerini güncelle
     _pulseAnimationValue += dt * 3.0; // Pulse animasyonu
 
-    // Skor artışı animasyonu
-    if (_isScoreAnimating) {
-      _scoreAnimationValue += dt * 8.0; // Hızlı animasyon
-      if (_scoreAnimationValue >= 1.0) {
-        _scoreAnimationValue = 0.0;
-        _isScoreAnimating = false;
-        _lastScore = score;
+    // Skor artışı animasyonu - sayı sayarak artır
+    if (_displayedScore < score.toInt()) {
+      final diff = score.toInt() - _displayedScore;
+      final increment = (diff * dt * 15).ceil(); // Yumuşak geçiş
+      _displayedScore += increment;
+      if (_displayedScore > score.toInt()) {
+        _displayedScore = score.toInt();
+      }
+
+      // Skor değişirken pulse efekti
+      _scoreAnimationValue = (_scoreAnimationValue + dt * 3.0) % 1.0;
+    } else {
+      _scoreAnimationValue = 0.0;
+    }
+
+    // Level animasyonu - sadece glow efekti için
+    if (_isLevelAnimating) {
+      _levelAnimationValue += dt * 3.0;
+      if (_levelAnimationValue >= 1.0) {
+        _levelAnimationValue = 1.0;
+        _isLevelAnimating = false;
+        _levelAnimationCompleted = true;
+      }
+    }
+
+    // Glow efekti geri dönüşü
+    if (_levelAnimationCompleted && !_isLevelAnimating) {
+      _levelAnimationValue -= dt * 1.5;
+      if (_levelAnimationValue <= 0.0) {
+        _levelAnimationValue = 0.0;
+        _levelAnimationCompleted = false;
+      }
+    }
+
+    // Renk geçiş animasyonu
+    if (_colorTransitionProgress < 1.0) {
+      _colorTransitionProgress += dt * 0.8; // Yavaş renk geçişi
+      if (_colorTransitionProgress >= 1.0) {
+        _colorTransitionProgress = 1.0;
+        _currentBackgroundColor = _targetBackgroundColor;
       }
     }
 
@@ -1525,12 +1454,20 @@ class GameController extends FlameGame
     // Timer'ları güncelle
     pastaMoveTimer.update(dt);
 
+    // Power-up timer'larını güncelle
+    _speedTimer?.update(dt);
+    _shieldTimer?.update(dt);
+    _freezeTimer?.update(dt);
+    _multiHitTimer?.update(dt);
+
     super.update(dt);
   }
 
   @override
   void onTapDown(TapDownInfo info) {
-    if (gameState != GameState.playing) return;
+    if (gameState != GameState.playing) {
+      return;
+    }
 
     final tapPosition = info.eventPosition.global;
 
@@ -1544,193 +1481,336 @@ class GameController extends FlameGame
     for (final enemy in enemyManager.enemies) {
       if (enemy.isDead) continue;
 
-      if (enemy.containsPoint(tapPosition)) {
+      // Manuel collision detection - kombo düşmanlar için daha büyük radius
+      final baseRadius = enemy.isComboEnemy ? 50.0 : 35.0;
+      final enemyRadius = baseRadius * tapRadiusMultiplier;
+      final distance = (tapPosition - enemy.position).length;
+
+      if (distance < enemyRadius) {
         // Düşmanı öldür
         enemy.isDead = true;
-        score += 10;
+
+        // Kombo düşmanlara basınca ekstra puan ver
+        final basePoints = enemy.isComboEnemy ? enemy.comboMultiplier : 1;
+        score += basePoints * scoreMultiplier;
+
+        // Düşman öldürme sesi çal
+        SoundManager.playSmashSound();
+
+        // Analytics: Düşman öldürme event'i
+        _analytics.logEnemyKilled(
+          enemyType: enemy.runtimeType.toString(),
+          currentScore: score.toInt(),
+          level: currentLevel,
+        );
 
         // Skor artışı animasyonunu tetikle
         if (score > _lastScore) {
-          _isScoreAnimating = true;
           _scoreAnimationValue = 0.0;
         }
 
-        // Patlama efekti
-        add(ExplosionEffect(position: enemy.position));
-
-        // Kan efekti
-        add(BloodEffect(position: enemy.position));
+        // Kombo düşmanlar için daha fazla efekt
+        if (enemy.isComboEnemy) {
+          // Büyük patlama efekti
+          for (int i = 0; i < 3; i++) {
+            add(ExplosionEffect(position: enemy.position));
+          }
+          // Büyük kan efekti
+          for (int i = 0; i < 5; i++) {
+            add(BloodEffect(position: enemy.position));
+          }
+        } else {
+          // Normal patlama efekti
+          add(ExplosionEffect(position: enemy.position));
+          add(BloodEffect(position: enemy.position));
+        }
 
         // Düşmanı hemen kaldır
         enemy.removeFromParent();
         enemyManager.enemies.remove(enemy);
 
-        print("Düşman öldürüldü! Skor: $score");
         break;
+      }
+    }
+
+    // Power-up'lara dokunma kontrolü
+    print(
+        "🎯 PowerUp kontrolü - Liste uzunluğu: ${powerUpManager.powerUps.length}, Tap: $tapPosition");
+
+    if (powerUpManager.powerUps.isEmpty) {
+      print("⚠️ PowerUp listesi boş!");
+    }
+
+    for (final powerUp in powerUpManager.powerUps) {
+      if (powerUp.isCollected) {
+        print("⏭️ PowerUp zaten toplanmış: ${powerUp.type}");
+        continue;
+      }
+
+      // Anchor center olduğu için position zaten center
+      final powerUpCenter = powerUp.position;
+      final powerUpRadius = powerUp.size.x / 2; // Power-up'ın radius'u
+      final distance = (tapPosition - powerUpCenter).length;
+
+      print(
+          "🎁 PowerUp kontrol - Type: ${powerUp.type}, Center: $powerUpCenter, Size: ${powerUp.size}, Radius: $powerUpRadius, Distance: $distance");
+
+      if (distance < powerUpRadius) {
+        // Power-up'ı topla ve aktif et
+        print("✅ PowerUp toplandı: ${powerUp.type}");
+        powerUp.collect();
+        SoundManager.playSmashSound();
+        break;
+      } else {
+        print(
+            "❌ PowerUp mesafe fazla - Distance: $distance, Radius: $powerUpRadius");
       }
     }
   }
 
   bool _isPauseButtonTapped(Vector2 tapPosition) {
-    final safeAreaPadding = 20.0;
-    final buttonWidth = 80.0;
-    final buttonHeight = 40.0;
-    final buttonMargin = safeAreaPadding;
+    // MediaQuery'den safe area padding al
+    double topPadding = 0;
+    double rightPadding = 0;
 
-    final buttonX = size.x - buttonWidth - buttonMargin;
-    final buttonY = safeAreaPadding;
+    if (_context != null) {
+      try {
+        final mediaQuery = MediaQuery.of(_context!);
+        topPadding = mediaQuery.padding.top;
+        rightPadding = mediaQuery.padding.right;
+      } catch (e) {
+        // MediaQuery error
+      }
+    }
 
-    final buttonRect =
-        Rect.fromLTWH(buttonX, buttonY, buttonWidth, buttonHeight);
+    // Ekstra güvenlik padding'i
+    const safeAreaPadding = 10.0;
+    const buttonWidth = 40.0;
+    const buttonHeight = 35.0;
+
+    final yPos = topPadding + safeAreaPadding;
+    final buttonX = size.x - 50.0 - rightPadding - safeAreaPadding;
+
+    final buttonRect = Rect.fromLTWH(buttonX, yPos, buttonWidth, buttonHeight);
+
     return buttonRect.contains(tapPosition.toOffset());
   }
 
   // Böcek sprite'ı oluşturma metodu
-  Sprite _createBugSprite(Color color, String type) {
+  Sprite _createBugSprite(Color color, String type, {double scale = 1.0}) {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
+
+    final s = scale;
+    // Daha büyük sprite boyutu için koordinatları 2x'e çıkar
+    final multiplier = 2.0;
 
     // Ana vücut
     final bodyPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(32, 32), 25, bodyPaint);
+    canvas.drawCircle(Offset(64 * s * multiplier, 64 * s * multiplier),
+        50 * s * multiplier, bodyPaint);
 
     // Gözler
     final eyePaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(26, 26), 3, eyePaint);
-    canvas.drawCircle(const Offset(38, 26), 3, eyePaint);
+    canvas.drawCircle(Offset(52 * s * multiplier, 52 * s * multiplier),
+        6 * s * multiplier, eyePaint);
+    canvas.drawCircle(Offset(76 * s * multiplier, 52 * s * multiplier),
+        6 * s * multiplier, eyePaint);
 
     // Göz bebekleri
     final pupilPaint = Paint()
       ..color = Colors.black
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(26, 26), 1.5, pupilPaint);
-    canvas.drawCircle(const Offset(38, 26), 1.5, pupilPaint);
+    canvas.drawCircle(Offset(52 * s * multiplier, 52 * s * multiplier),
+        3 * s * multiplier, pupilPaint);
+    canvas.drawCircle(Offset(76 * s * multiplier, 52 * s * multiplier),
+        3 * s * multiplier, pupilPaint);
 
     // Bacaklar
     final legPaint = Paint()
       ..color = color.withOpacity(0.8)
-      ..strokeWidth = 2.0
+      ..strokeWidth = 4.0 * s * multiplier
       ..style = PaintingStyle.stroke;
 
     // Sol bacaklar
-    canvas.drawLine(const Offset(20, 45), const Offset(15, 55), legPaint);
-    canvas.drawLine(const Offset(25, 45), const Offset(20, 55), legPaint);
+    canvas.drawLine(Offset(40 * s * multiplier, 90 * s * multiplier),
+        Offset(30 * s * multiplier, 110 * s * multiplier), legPaint);
+    canvas.drawLine(Offset(50 * s * multiplier, 90 * s * multiplier),
+        Offset(40 * s * multiplier, 110 * s * multiplier), legPaint);
 
     // Sağ bacaklar
-    canvas.drawLine(const Offset(39, 45), const Offset(44, 55), legPaint);
-    canvas.drawLine(const Offset(44, 45), const Offset(49, 55), legPaint);
+    canvas.drawLine(Offset(78 * s * multiplier, 90 * s * multiplier),
+        Offset(88 * s * multiplier, 110 * s * multiplier), legPaint);
+    canvas.drawLine(Offset(88 * s * multiplier, 90 * s * multiplier),
+        Offset(98 * s * multiplier, 110 * s * multiplier), legPaint);
 
     // Kenarlık
     final borderPaint = Paint()
       ..color = Colors.black
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    canvas.drawCircle(const Offset(32, 32), 25, borderPaint);
+      ..strokeWidth = 4.0 * s * multiplier;
+    canvas.drawCircle(Offset(64 * s * multiplier, 64 * s * multiplier),
+        50 * s * multiplier, borderPaint);
 
     final picture = recorder.endRecording();
-    final image = picture.toImageSync(64, 64);
+    final image = picture.toImageSync(
+        (128 * s * multiplier).round(), (128 * s * multiplier).round());
 
     return Sprite(image);
   }
 
   // Gelişmiş pasta sprite'ı oluşturma metodu
-  Sprite _createEnhancedCakeSprite() {
-    print("Gelişmiş pasta sprite oluşturuluyor...");
+  Sprite createEnhancedCakeSprite({double scale = 1.0}) {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // Pasta tabanı (kahverengi)
+    // Tasarım referans boyutu - SABİT OLARAK 150x150 PİKSEL YÜKSEK ÇÖZÜNÜRLÜKTE ÜRETİLECEK
+    const designSize = 150.0;
+
+    // Canvas'ı her zaman yüksek çözünürlükte çiz (hangi level olursa olsun)
+    const fixedCanvasSize = 150.0;
+    final s = fixedCanvasSize / designSize; // Çizim ölçeği 1x (normal boyutta)
+
+    // Pasta tabanı (kahverengi) - gölge efekti ile
+    final shadowPaint = Paint()
+      ..color = const Color(0x66000000)
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(75 * s, 97.5 * s),
+        width: 127.5 * s,
+        height: 18 * s,
+      ),
+      shadowPaint,
+    );
+
+    // Pasta tabanı (kahverengi) - ana pasta
     final basePaint = Paint()
       ..color = const Color(0xFF8B4513)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(40, 40), 35, basePaint);
+    canvas.drawCircle(Offset(75 * s, 75 * s), 57 * s, basePaint);
 
-    // Pasta üstü (krem rengi)
+    // Pasta tabanı gradient alt
+    final baseGradientPaint = Paint()
+      ..color = const Color(0xFFA0522D)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(75 * s, 82.5 * s), 57 * s, baseGradientPaint);
+
+    // Pasta üstü - çift katman
     final topPaint = Paint()
       ..color = const Color(0xFFFFF8DC)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(40, 35), 30, topPaint);
+    canvas.drawCircle(Offset(75 * s, 63 * s), 48 * s, topPaint);
 
-    // Çilek (kırmızı)
+    // Pasta üstü - krema detayı
+    final creamPaint = Paint()
+      ..color = const Color(0xFFFFFACD)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(75 * s, 57 * s), 42 * s, creamPaint);
+
+    // Krema tepe noktası
+    final creamPeakPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(75 * s, 48 * s), 36 * s, creamPeakPaint);
+
+    // Çilek detayları (birkaç çilek)
     final strawberryPaint = Paint()
       ..color = const Color(0xFFFF6B6B)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(40, 25), 10, strawberryPaint);
 
-    // Çilek yaprağı (yeşil)
+    // Ana çilek
+    canvas.drawCircle(Offset(75 * s, 33 * s), 18 * s, strawberryPaint);
+
+    // Çilek gölgesi
+    final strawberryShadow = Paint()
+      ..color = const Color(0xFFE63946)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(75 * s, 37.5 * s), 18 * s, strawberryShadow);
+
+    // Çilek yaprakları (detaylı)
     final leafPaint = Paint()
       ..color = const Color(0xFF4CAF50)
       ..style = PaintingStyle.fill;
-    canvas.drawOval(
-        Rect.fromCenter(center: const Offset(40, 15), width: 15, height: 8),
-        leafPaint);
 
-    // Kenarlık
+    // Yaprak 1
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(75 * s, 15 * s),
+        width: 27 * s,
+        height: 15 * s,
+      ),
+      leafPaint,
+    );
+
+    // Yaprak 2
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(67.5 * s, 18 * s),
+        width: 22.5 * s,
+        height: 12 * s,
+      ),
+      leafPaint,
+    );
+
+    // Yaprak 3
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(82.5 * s, 18 * s),
+        width: 22.5 * s,
+        height: 12 * s,
+      ),
+      leafPaint,
+    );
+
+    // Pasta kenarı detayı - dekoreatif kenar
+    final decorationPaint = Paint()
+      ..color = const Color(0xFFF0E68C)
+      ..style = PaintingStyle.fill;
+    for (int i = 0; i < 8; i++) {
+      final angle = (i * 45.0 * 3.14159) / 180.0;
+      final x = 75 * s + 45 * s * cos(angle);
+      final y = 63 * s + 45 * s * sin(angle);
+      canvas.drawCircle(Offset(x, y), 6 * s, decorationPaint);
+    }
+
+    // Pasta kenarı detayı - iki katmanlı
+    final decorationPaint2 = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    for (int i = 0; i < 8; i++) {
+      final angle = (i * 45.0 * 3.14159) / 180.0;
+      final x = 75 * s + 45 * s * cos(angle);
+      final y = 63 * s + 45 * s * sin(angle);
+      canvas.drawCircle(Offset(x, y), 4.5 * s, decorationPaint2);
+    }
+
+    // Pasta kenarı - koyu kahverengi gölge
+    final baseShadowPaint = Paint()
+      ..color = const Color(0xFF654321)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0 * s;
+    canvas.drawCircle(Offset(75 * s, 75 * s), 57 * s, baseShadowPaint);
+
+    // Ana kenarlık
     final borderPaint = Paint()
       ..color = Colors.black
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
-    canvas.drawCircle(const Offset(40, 40), 35, borderPaint);
+      ..strokeWidth = 3.75 * s;
+    canvas.drawCircle(Offset(75 * s, 75 * s), 57 * s, borderPaint);
 
     final picture = recorder.endRecording();
-    final image = picture.toImageSync(80, 80);
+    // Her zaman yüksek çözünürlüklü (150x150) sprite oluştur
+    final highResImage = picture.toImageSync(
+      fixedCanvasSize.round(),
+      fixedCanvasSize.round(),
+    );
 
-    print("Gelişmiş pasta sprite oluşturuldu");
-    return Sprite(image);
-  }
-
-  // Basit fallback sprite metodları
-  Sprite _createSimpleCakeSprite() {
-    print("Basit pasta sprite oluşturuluyor...");
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    final paint = Paint()
-      ..color = const Color(0xFF8B4513)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(const Offset(40, 40), 35, paint);
-
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(80, 80);
-
-    print("Basit pasta sprite oluşturuldu");
-    return Sprite(image);
-  }
-
-  Sprite _createSimpleExplosionSprite() {
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    final paint = Paint()
-      ..color = Colors.orange
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(const Offset(32, 32), 30, paint);
-
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(64, 64);
-
-    return Sprite(image);
-  }
-
-  Sprite _createSimpleBugSprite(Color color) {
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(const Offset(32, 32), 25, paint);
-
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(64, 64);
-
-    return Sprite(image);
+    return Sprite(highResImage);
   }
 }

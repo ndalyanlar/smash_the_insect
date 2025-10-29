@@ -1,3 +1,5 @@
+import 'dart:math';
+import 'dart:ui' as ui;
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../game_controller.dart';
@@ -20,28 +22,76 @@ class Player extends SpriteComponent with KnowsGameSize {
 
   @override
   void render(Canvas canvas) {
-    // Debug mesajları - her render'da çalışsın
-    print("=== PLAYER RENDER ===");
-    print("Sprite: ${sprite != null}");
-    print("Position: $position");
-    print("Size: $size");
-    print("Health: $currentHealth");
-    print("Anchor: $anchor");
-    print("Parent: ${parent != null}");
+    if (sprite == null) return;
+    if (parent == null) return;
 
-    if (sprite == null) {
-      print("SPRITE NULL! Pasta render edilemiyor!");
-      return;
-    }
+    // Aktif power-up efektlerini göster
+    _renderActivePowerUps(canvas);
 
-    if (parent == null) {
-      print("PARENT NULL! Pasta parent'tan ayrılmış!");
-      return;
-    }
-
-    print("Pasta render ediliyor...");
     super.render(canvas);
-    print("Pasta render tamamlandı");
+  }
+
+  void _renderActivePowerUps(Canvas canvas) {
+    final time = DateTime.now().millisecondsSinceEpoch / 1000.0;
+    final pulse = (sin(time * 4.0) + 1) / 2;
+    final center = Offset(size.x / 2, size.y / 2);
+    final radius = size.x / 2;
+
+    // Shield efekti - mavi aura
+    if (gameController.shieldActive) {
+      final shieldPaint = Paint()
+        ..color = Colors.cyan.withOpacity(0.4 * pulse)
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 15);
+      canvas.drawCircle(center, radius + 15 * pulse, shieldPaint);
+
+      final shieldRing = Paint()
+        ..color = Colors.cyan.withOpacity(0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.0;
+      canvas.drawCircle(center, radius + 10, shieldRing);
+    }
+
+    // Speed efekti - mavi hız çizgileri
+    if (gameController.tapRadiusMultiplier > 1.0) {
+      final speedPaint = Paint()
+        ..color = Colors.blue.withOpacity(0.3 * pulse)
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 10);
+      canvas.drawCircle(center, radius + 20 * pulse, speedPaint);
+
+      // Hız çizgileri
+      for (int i = 0; i < 8; i++) {
+        final angle = (i * 45.0 * 3.14159) / 180.0;
+        final startX = center.dx + (radius - 5) * cos(angle);
+        final startY = center.dy + (radius - 5) * sin(angle);
+        final endX = center.dx + (radius + 15) * cos(angle);
+        final endY = center.dy + (radius + 15) * sin(angle);
+
+        final linePaint = Paint()
+          ..color = Colors.blue.withOpacity(0.6)
+          ..strokeWidth = 3.0;
+        canvas.drawLine(Offset(startX, startY), Offset(endX, endY), linePaint);
+      }
+    }
+
+    // MultiHit efekti - mor parçacıklar
+    if (gameController.scoreMultiplier > 1.0) {
+      final multiHitPaint = Paint()
+        ..color = Colors.purple.withOpacity(0.3 * pulse)
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 12);
+      canvas.drawCircle(center, radius + 18 * pulse, multiHitPaint);
+
+      // Parçacık efektleri (çevrede küçük daireler)
+      for (int i = 0; i < 12; i++) {
+        final angle = (i * 30.0 * 3.14159) / 180.0;
+        final particleX = center.dx + (radius + 25) * cos(angle);
+        final particleY = center.dy + (radius + 25) * sin(angle);
+
+        final particlePaint = Paint()
+          ..color = Colors.purple.withOpacity(0.8 * pulse);
+        canvas.drawCircle(
+            Offset(particleX, particleY), 4 * pulse, particlePaint);
+      }
+    }
   }
 
   void updatePosition(Vector2 newPosition) {
@@ -49,20 +99,10 @@ class Player extends SpriteComponent with KnowsGameSize {
   }
 
   void takeDamage(double damage) {
-    print("=== PLAYER TAKE DAMAGE ===");
-    print("Hasar öncesi can: $currentHealth");
-    print("Alınan hasar: $damage");
-
     currentHealth -= damage;
     if (currentHealth <= 0) {
       currentHealth = 0;
-      print("CAN BİTTİ! Oyun bitecek!");
     }
-
-    print("Hasar sonrası can: $currentHealth");
-
-    // Hasar efekti kaldırıldı - pasta kaybolmasını önlemek için
-    print("Hasar efekti kaldırıldı - pasta kaybolmasını önlemek için");
   }
 
   // Canı yenileme metodu
