@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FirestoreService {
@@ -21,7 +22,9 @@ class FirestoreService {
 
       return querySnapshot.docs.isNotEmpty;
     } catch (e) {
-      print('Error checking nickname: $e');
+      if (kDebugMode) {
+        print('Error checking nickname: $e');
+      }
       return false;
     }
   }
@@ -70,8 +73,10 @@ class FirestoreService {
             'game_time': gameTime,
             'last_updated': FieldValue.serverTimestamp(),
           });
-          print(
-              'High score updated for $nickname: $score (Level: $level, Time: ${gameTime.toStringAsFixed(1)}s)');
+          if (kDebugMode) {
+            print(
+                'High score updated for $nickname: $score (Level: $level, Time: ${gameTime.toStringAsFixed(1)}s)');
+          }
         }
       } else {
         // Create new user document
@@ -83,11 +88,15 @@ class FirestoreService {
           'created_at': FieldValue.serverTimestamp(),
           'last_updated': FieldValue.serverTimestamp(),
         });
-        print(
-            'New user created: $nickname with score: $score (Level: $level, Time: ${gameTime.toStringAsFixed(1)}s)');
+        if (kDebugMode) {
+          print(
+              'New user created: $nickname with score: $score (Level: $level, Time: ${gameTime.toStringAsFixed(1)}s)');
+        }
       }
     } catch (e) {
-      print('Error saving high score: $e');
+      if (kDebugMode) {
+        print('Error saving high score: $e');
+      }
     }
   }
 
@@ -130,7 +139,9 @@ class FirestoreService {
         };
       }).toList();
     } catch (e) {
-      print('Error getting top scores: $e');
+      if (kDebugMode) {
+        print('Error getting top scores: $e');
+      }
       return [];
     }
   }

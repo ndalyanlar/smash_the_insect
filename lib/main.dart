@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -21,6 +22,7 @@ import 'Components/settings_service.dart';
 import 'Components/sound_manager.dart';
 import 'Components/firestore_service.dart';
 import 'Components/nickname_screen.dart';
+import 'Components/shop_screen.dart';
 import 'generated/locale_keys.g.dart';
 
 // iOS için ATT izin kontrolü
@@ -146,6 +148,7 @@ class MainApp extends StatelessWidget {
         '/game': (context) => const GameScreen(),
         '/scoreboard': (context) => const ScoreBoardScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/shop': (context) => const ShopScreen(),
       },
     );
   }
@@ -280,6 +283,122 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     'assets/animations/cockroach.json',
   ];
 
+  void _showPowerUpsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF87CEEB),
+                  Color(0xFF4682B4),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.5),
+                width: 2,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Başlık
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        LocaleKeys.powerups_title.tr(),
+                        style: Theme.of(dialogContext)
+                            .textTheme
+                            .headlineMedium
+                            ?.copyWith(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Power-up açıklamaları
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    _PowerUpItem(
+                      emoji: "❤️",
+                      description: LocaleKeys.powerup_health.tr(),
+                    ),
+                    _PowerUpItem(
+                      emoji: "⚡️",
+                      description: LocaleKeys.powerup_speed.tr(),
+                    ),
+                    _PowerUpItem(
+                      emoji: "🛡️",
+                      description: LocaleKeys.powerup_shield.tr(),
+                    ),
+                    _PowerUpItem(
+                      emoji: "✴️",
+                      description: LocaleKeys.powerup_multihit.tr(),
+                    ),
+                    _PowerUpItem(
+                      emoji: "❄️",
+                      description: LocaleKeys.powerup_freeze.tr(),
+                    ),
+                    _PowerUpItem(
+                      emoji: "💣",
+                      description: LocaleKeys.powerup_bomb.tr(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Kapat butonu
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E8B57),
+                      foregroundColor: Colors.white,
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      LocaleKeys.back_to_home_settings.tr(),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -338,62 +457,65 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                     const SizedBox(height: 8),
                     // Oyun başlığı - kompakt
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.4),
-                          width: 2,
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 16,
                         ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          Lottie.asset(
-                            _lottieAnimations.elementAt(
-                              Random().nextInt(_lottieAnimations.length),
-                            ),
-                            width: 50,
-                            height: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.4),
+                            width: 2,
                           ),
-                          // const Icon(
-                          //   Icons.bug_report,
-                          //   size: 32,
-                          //   color: Colors.white,
-                          // ),
-                          // const SizedBox(width: 10),
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              // mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  LocaleKeys.game_title.tr(),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineLarge
-                                      ?.copyWith(
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                ),
-                                Text(
-                                  LocaleKeys.game_subtitle.tr(),
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                    fontStyle: FontStyle.italic,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Lottie.asset(
+                              _lottieAnimations.elementAt(
+                                Random().nextInt(_lottieAnimations.length),
+                              ),
+                              width: 50,
+                              height: 50,
+                            ),
+                            // const Icon(
+                            //   Icons.bug_report,
+                            //   size: 32,
+                            //   color: Colors.white,
+                            // ),
+                            // const SizedBox(width: 10),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                // mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    LocaleKeys.game_title.tr(),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineLarge
+                                        ?.copyWith(
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                   ),
-                                ),
-                              ],
+                                  Text(
+                                    LocaleKeys.game_subtitle.tr(),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 14,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -502,63 +624,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                     const SizedBox(height: 8),
 
-                    // Power-up açıklamaları
-                    Container(
+                    // Power-up açıklamaları butonu
+                    SizedBox(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
-                          width: 1,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showPowerUpsDialog(context),
+                        icon: const Icon(Icons.info_outline, size: 18),
+                        label: Text(
+                          LocaleKeys.powerups_title.tr(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            LocaleKeys.powerups_title.tr(),
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineMedium
-                                ?.copyWith(
-                                  fontSize: 14,
-                                ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withOpacity(0.5),
+                            width: 1.5,
                           ),
-                          const SizedBox(height: 4),
-                          Wrap(
-                            spacing: 4,
-                            runSpacing: 4,
-                            // alignment: WrapAlignment.spaceBetween,
-                            children: [
-                              _PowerUpItem(
-                                emoji: "❤️",
-                                description: LocaleKeys.powerup_health.tr(),
-                              ),
-                              _PowerUpItem(
-                                emoji: "⚡️",
-                                description: LocaleKeys.powerup_speed.tr(),
-                              ),
-                              _PowerUpItem(
-                                emoji: "🛡️",
-                                description: LocaleKeys.powerup_shield.tr(),
-                              ),
-                              _PowerUpItem(
-                                emoji: "✴️",
-                                description: LocaleKeys.powerup_multihit.tr(),
-                              ),
-                              _PowerUpItem(
-                                emoji: "❄️",
-                                description: LocaleKeys.powerup_freeze.tr(),
-                              ),
-                              _PowerUpItem(
-                                emoji: "💣",
-                                description: LocaleKeys.powerup_bomb.tr(),
-                              ),
-                            ],
+                          backgroundColor: Colors.white.withOpacity(0.1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
                           ),
-                        ],
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                     ),
 
@@ -569,85 +662,106 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
               // const SizedBox(height: 8),
 
-              Column(
-                children: [
-                  // Oyuna Başla butonu - Full width
-                  SizedBox(
-                    width: double.infinity,
-                    height: 65,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        _analytics.logStartGameButtonClick();
-                        Navigator.pushReplacementNamed(context, '/game');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2E8B57),
-                        foregroundColor: Colors.white,
-                        elevation: 8,
-                        shadowColor: Colors.black.withOpacity(0.3),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+              Expanded(
+                child: Column(
+                  children: [
+                    // Oyuna Başla butonu - Full width
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _analytics.logStartGameButtonClick();
+                          Navigator.pushReplacementNamed(context, '/game');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2E8B57),
+                          foregroundColor: Colors.white,
+                          elevation: 8,
+                          shadowColor: Colors.black.withOpacity(0.3),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.play_arrow, size: 28),
+                            const SizedBox(width: 10),
+                            Text(
+                              LocaleKeys.start_game.tr(),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium
+                                  ?.copyWith(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                          ],
                         ),
                       ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Skor Tablosu, Mağaza ve Ayarlar - Altta 3 sütun
+                    Expanded(
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.play_arrow, size: 28),
-                          const SizedBox(width: 10),
-                          Text(
-                            LocaleKeys.start_game.tr(),
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineMedium
-                                ?.copyWith(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                          Expanded(
+                            child: _buildMenuButton(
+                              context: context,
+                              icon: Icons.leaderboard,
+                              label: LocaleKeys.scoreboard.tr(),
+                              color: const Color(0xFF4682B4),
+                              onPressed: () {
+                                _analytics.logScoreboardButtonClick();
+                                Navigator.pushNamed(context, '/scoreboard');
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildMenuButton(
+                              context: context,
+                              icon: Icons.shopping_cart,
+                              label: LocaleKeys.shop.tr(),
+                              color: const Color(0xFFE67E22),
+                              onPressed: () {
+                                _analytics.logCustomEvent(
+                                  eventName: 'shop_button_click',
+                                  parameters: {
+                                    'timestamp':
+                                        DateTime.now().millisecondsSinceEpoch
+                                  },
+                                );
+                                Navigator.pushNamed(context, '/shop');
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildMenuButton(
+                              context: context,
+                              icon: Icons.settings,
+                              label: LocaleKeys.settings.tr(),
+                              color: const Color(0xFF8B4513),
+                              onPressed: () {
+                                _analytics.logCustomEvent(
+                                  eventName: 'settings_button_click',
+                                  parameters: {
+                                    'timestamp':
+                                        DateTime.now().millisecondsSinceEpoch
+                                  },
+                                );
+                                Navigator.pushNamed(context, '/settings');
+                              },
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Skor Tablosu ve Ayarlar - Altta yan yana
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildMenuButton(
-                          context: context,
-                          icon: Icons.leaderboard,
-                          label: LocaleKeys.scoreboard.tr(),
-                          color: const Color(0xFF4682B4),
-                          onPressed: () {
-                            _analytics.logScoreboardButtonClick();
-                            Navigator.pushNamed(context, '/scoreboard');
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildMenuButton(
-                          context: context,
-                          icon: Icons.settings,
-                          label: LocaleKeys.settings.tr(),
-                          color: const Color(0xFF8B4513),
-                          onPressed: () {
-                            _analytics.logCustomEvent(
-                              eventName: 'settings_button_click',
-                              parameters: {
-                                'timestamp':
-                                    DateTime.now().millisecondsSinceEpoch
-                              },
-                            );
-                            Navigator.pushNamed(context, '/settings');
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
 
               BannerAdWidget(adUnitId: AdMobService.bannerAdHomeScreenUnitId),
@@ -665,38 +779,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required Color color,
     required VoidCallback onPressed,
   }) {
-    return SizedBox(
-      height: 60,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: Colors.white,
-          elevation: 6,
-          shadowColor: Colors.black.withOpacity(0.3),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        elevation: 6,
+        shadowColor: Colors.black.withOpacity(0.3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 1,
-                textAlign: TextAlign.center,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 24),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
               ),
+              maxLines: 1,
+              textAlign: TextAlign.center,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -774,7 +885,9 @@ class _ScoreBoardScreenState extends State<ScoreBoardScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error loading top scores: $e');
+      if (kDebugMode) {
+        print('Error loading top scores: $e');
+      }
       setState(() {
         _isLoading = false;
       });

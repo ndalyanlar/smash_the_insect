@@ -6,6 +6,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
@@ -25,6 +26,7 @@ import 'Components/sound_manager.dart';
 import 'Components/firestore_service.dart';
 import 'Components/banner_ad_widget.dart';
 import 'Components/power_up.dart';
+import 'Components/shop_service.dart';
 
 class GameController extends FlameGame
     with TapDetector, HasKeyboardHandlerComponents {
@@ -49,6 +51,9 @@ class GameController extends FlameGame
   // Firestore servisi
   final FirestoreService _firestoreService = FirestoreService();
 
+  // Shop servisi
+  final ShopService _shopService = ShopService();
+
   // Oyun değişkenleri
   double score = 0;
   double gameTime = 0.0;
@@ -68,7 +73,7 @@ class GameController extends FlameGame
 
   // Skor artışı animasyonu için
   double _scoreAnimationValue = 0.0;
-  double _lastScore = 0.0;
+  final double _lastScore = 0.0;
   int _displayedScore = 0; // Görünen animasyonlu skor
 
   // Level animasyonu için
@@ -91,10 +96,10 @@ class GameController extends FlameGame
   bool freezeActive = false;
   double scoreMultiplier = 1.0;
 
-  late Timer? _speedTimer = null;
-  late Timer? _shieldTimer = null;
-  late Timer? _freezeTimer = null;
-  late Timer? _multiHitTimer = null;
+  Timer? _speedTimer;
+  Timer? _shieldTimer;
+  Timer? _freezeTimer;
+  Timer? _multiHitTimer;
 
   // Level hesaplama ve güncelleme
   void _updateLevel() {
@@ -242,10 +247,10 @@ class GameController extends FlameGame
     // await _loadSprites();
 
     // Player'ı oluştur
-    _createPlayer();
+    await _createPlayer();
 
     // EnemyManager'ı oluştur
-    _createEnemyManager();
+    await _createEnemyManager();
 
     // PowerUpManager'ı oluştur
     _createPowerUpManager();
@@ -310,9 +315,13 @@ class GameController extends FlameGame
   //   }
   // }
 
-  void _createPlayer() {
+  Future<void> _createPlayer() async {
+    final selectedCake = await _shopService.getSelectedCake();
     player = Player(
-      sprite: createEnhancedCakeSprite(scale: _uiScale),
+      sprite: createEnhancedCakeSprite(
+        cakeId: selectedCake,
+        scale: _uiScale,
+      ),
       size: Vector2(85 * _uiScale, 85 * _uiScale),
       position: size / 2,
       gameController: this,
@@ -322,26 +331,97 @@ class GameController extends FlameGame
     add(player);
   }
 
-  void _createEnemyManager() {
-    enemyManager = EnemyManager(
-      gameController: this,
-      sprites: [
-        _createBugSprite(
+  Future<void> _createEnemyManager() async {
+    final selectedEnemy = await _shopService.getSelectedEnemy();
+    final purchasedEnemies = await _shopService.getPurchasedEnemies();
+
+    // Seçilen düşman modeline göre sprite oluştur
+    Sprite enemySprite;
+
+    // Seçilen düşman modeline göre sprite'ı belirle
+    switch (selectedEnemy) {
+      case 'enemy_1': // Karınca
+        enemySprite = _createBugSprite(
           const Color(0xFF8B4513),
           "ANT",
           scale: _uiScale,
-        ),
-        _createBugSprite(
+        );
+        break;
+      case 'enemy_2': // Örümcek
+        enemySprite = _createBugSprite(
           const Color(0xFF000000),
           "SPIDER",
           scale: _uiScale,
-        ),
-        _createBugSprite(
+        );
+        break;
+      case 'enemy_3': // Hamam Böceği
+        enemySprite = _createBugSprite(
           const ui.Color.fromARGB(255, 150, 116, 83),
           "COCKROACH",
           scale: _uiScale,
-        )
-      ],
+        );
+        break;
+      case 'enemy_4': // Böcek
+        if (purchasedEnemies.contains('enemy_4')) {
+          enemySprite = _createBugSprite(
+            const Color(0xFF2E7D32),
+            "BEETLE",
+            scale: _uiScale,
+          );
+        } else {
+          // Satın alınmamışsa varsayılan
+          enemySprite = _createBugSprite(
+            const Color(0xFF8B4513),
+            "ANT",
+            scale: _uiScale,
+          );
+        }
+        break;
+      case 'enemy_5': // Eşek Arısı
+        if (purchasedEnemies.contains('enemy_5')) {
+          enemySprite = _createBugSprite(
+            const Color(0xFFFFEB3B),
+            "WASP",
+            scale: _uiScale,
+          );
+        } else {
+          // Satın alınmamışsa varsayılan
+          enemySprite = _createBugSprite(
+            const Color(0xFF8B4513),
+            "ANT",
+            scale: _uiScale,
+          );
+        }
+        break;
+      case 'enemy_6': // Akrep
+        if (purchasedEnemies.contains('enemy_6')) {
+          enemySprite = _createBugSprite(
+            const Color(0xFFE91E63),
+            "SCORPION",
+            scale: _uiScale,
+          );
+        } else {
+          // Satın alınmamışsa varsayılan
+          enemySprite = _createBugSprite(
+            const Color(0xFF8B4513),
+            "ANT",
+            scale: _uiScale,
+          );
+        }
+        break;
+      default: // Varsayılan - Karınca
+        enemySprite = _createBugSprite(
+          const Color(0xFF8B4513),
+          "ANT",
+          scale: _uiScale,
+        );
+        break;
+    }
+
+    // Seçilen düşman modelini kullan (tüm düşmanlar aynı model olacak)
+    enemyManager = EnemyManager(
+      gameController: this,
+      sprites: [enemySprite], // Sadece seçilen düşman modeli
     );
     add(enemyManager);
   }
@@ -613,7 +693,7 @@ class GameController extends FlameGame
   }
 
   // Oyun bitişi
-  void _gameOver() {
+  Future<void> _gameOver() async {
     gameState = GameState.end;
     pauseEngine();
 
@@ -630,6 +710,9 @@ class GameController extends FlameGame
 
     // High score kaydet
     _saveHighScore();
+
+    // Skoru coin'e çevir
+    await _shopService.convertScoreToCoins(score.toInt());
 
     // Interstitial reklamı göster (eğer yüklendiyse)
     if (_adMobService.isInterstitialAdLoaded) {
@@ -659,7 +742,9 @@ class GameController extends FlameGame
         await _firestoreService.updateLocalHighScore(scoreInt);
       } else {}
     } catch (e) {
-      print('Error saving high score: $e');
+      if (kDebugMode) {
+        print('Error saving high score: $e');
+      }
     }
   }
 
@@ -1189,7 +1274,9 @@ class GameController extends FlameGame
         leftPadding = mediaQuery.padding.left;
         rightPadding = mediaQuery.padding.right;
       } catch (e) {
-        print("MediaQuery error: $e");
+        if (kDebugMode) {
+          print("MediaQuery error: $e");
+        }
       }
     }
 
@@ -1204,6 +1291,10 @@ class GameController extends FlameGame
 
     // Sadece level göster (can ekranın altında)
     _renderModernLevel(canvas, levelXPos, yPos);
+
+    // Aktif power-up'ları göster (level'ın yanında)
+    final powerUpXPos = levelXPos + 55.0 + 10.0; // Level'dan sonra
+    _renderActivePowerUps(canvas, powerUpXPos, yPos);
 
     // Pause butonu (sağ üst köşede) - ekran genişliğine göre ayarla
     final pauseButtonXPos = size.x - 50.0 - rightPadding - safeAreaPadding;
@@ -1303,6 +1394,122 @@ class GameController extends FlameGame
   // Level yıldız ikonu çizimi
 
   // Level progress barı çizimi
+
+  // Aktif power-up'ları göster
+  void _renderActivePowerUps(Canvas canvas, double x, double y) {
+    final activePowerUps = <Map<String, dynamic>>[];
+
+    // Aktif power-up'ları topla
+    if (shieldActive) {
+      activePowerUps.add({
+        'emoji': '🛡️',
+        'color': Colors.cyan,
+        'name': 'Shield',
+      });
+    }
+    if (tapRadiusMultiplier > 1.0) {
+      activePowerUps.add({
+        'emoji': '⚡️',
+        'color': Colors.blue,
+        'name': 'Speed',
+      });
+    }
+    if (scoreMultiplier > 1.0) {
+      activePowerUps.add({
+        'emoji': '✴️',
+        'color': Colors.purple,
+        'name': 'MultiHit',
+      });
+    }
+    if (freezeActive) {
+      activePowerUps.add({
+        'emoji': '❄️',
+        'color': Colors.lightBlue,
+        'name': 'Freeze',
+      });
+    }
+
+    if (activePowerUps.isEmpty) return;
+
+    // Her aktif power-up için ikon göster
+    const iconSize = 32.0;
+    const iconSpacing = 38.0;
+    final time = gameTime;
+    final pulse = (sin(time * 4.0) + 1) / 2;
+
+    for (int i = 0; i < activePowerUps.length; i++) {
+      final powerUp = activePowerUps[i];
+      final iconX = x + (i * iconSpacing);
+      final iconY = y + 20.0; // Level'ın ortasına hizala
+
+      // Glow efekti (pulse animasyonu)
+      final glowPaint = Paint()
+        ..color = (powerUp['color'] as Color).withOpacity(0.3 * pulse)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      canvas.drawCircle(
+          Offset(iconX, iconY), iconSize / 2 + 4 * pulse, glowPaint);
+
+      // Arka plan daire
+      final bgPaint = Paint()
+        ..color = Colors.black.withOpacity(0.5)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(iconX, iconY), iconSize / 2, bgPaint);
+
+      // Border (power-up renginde)
+      final borderPaint = Paint()
+        ..color = (powerUp['color'] as Color).withOpacity(0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawCircle(Offset(iconX, iconY), iconSize / 2, borderPaint);
+
+      // Emoji ikonu
+      final emojiText = TextPaint(
+        style: TextStyle(
+          fontSize: iconSize * 0.7,
+        ),
+      );
+      emojiText.render(
+        canvas,
+        powerUp['emoji'] as String,
+        Vector2(iconX, iconY),
+        anchor: Anchor.center,
+      );
+
+      // Timer progress ring (kalan süre gösterimi)
+      Timer? timer;
+      if (powerUp['name'] == 'Shield') {
+        timer = _shieldTimer;
+      } else if (powerUp['name'] == 'Speed') {
+        timer = _speedTimer;
+      } else if (powerUp['name'] == 'MultiHit') {
+        timer = _multiHitTimer;
+      } else if (powerUp['name'] == 'Freeze') {
+        timer = _freezeTimer;
+      }
+
+      if (timer != null && !timer.finished) {
+        // Timer progress hesapla (0.0 - 1.0)
+        final totalDuration = timer.limit;
+        final elapsed = totalDuration - timer.current;
+        final progress = (elapsed / totalDuration).clamp(0.0, 1.0);
+
+        // Progress ring çiz (dış halka)
+        final progressPaint = Paint()
+          ..color = (powerUp['color'] as Color).withOpacity(0.6)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3.0
+          ..strokeCap = StrokeCap.round;
+
+        // Sadece kalan kısmı çiz (progress kadar)
+        final rect = Rect.fromCircle(
+          center: Offset(iconX, iconY),
+          radius: iconSize / 2 + 2,
+        );
+        final sweepAngle = 2 * pi * progress;
+        canvas.drawArc(rect, -pi / 2, sweepAngle, false, progressPaint);
+      }
+    }
+  }
 
   void _renderModernPauseButton(Canvas canvas, double x, double y) {
     // Modern minimal pause butonu
@@ -1534,16 +1741,22 @@ class GameController extends FlameGame
     }
 
     // Power-up'lara dokunma kontrolü
-    print(
-        "🎯 PowerUp kontrolü - Liste uzunluğu: ${powerUpManager.powerUps.length}, Tap: $tapPosition");
+    if (kDebugMode) {
+      print(
+          "🎯 PowerUp kontrolü - Liste uzunluğu: ${powerUpManager.powerUps.length}, Tap: $tapPosition");
+    }
 
     if (powerUpManager.powerUps.isEmpty) {
-      print("⚠️ PowerUp listesi boş!");
+      if (kDebugMode) {
+        print("⚠️ PowerUp listesi boş!");
+      }
     }
 
     for (final powerUp in powerUpManager.powerUps) {
       if (powerUp.isCollected) {
-        print("⏭️ PowerUp zaten toplanmış: ${powerUp.type}");
+        if (kDebugMode) {
+          print("⏭️ PowerUp zaten toplanmış: ${powerUp.type}");
+        }
         continue;
       }
 
@@ -1552,18 +1765,24 @@ class GameController extends FlameGame
       final powerUpRadius = powerUp.size.x / 2; // Power-up'ın radius'u
       final distance = (tapPosition - powerUpCenter).length;
 
-      print(
-          "🎁 PowerUp kontrol - Type: ${powerUp.type}, Center: $powerUpCenter, Size: ${powerUp.size}, Radius: $powerUpRadius, Distance: $distance");
+      if (kDebugMode) {
+        print(
+            "🎁 PowerUp kontrol - Type: ${powerUp.type}, Center: $powerUpCenter, Size: ${powerUp.size}, Radius: $powerUpRadius, Distance: $distance");
+      }
 
       if (distance < powerUpRadius) {
         // Power-up'ı topla ve aktif et
-        print("✅ PowerUp toplandı: ${powerUp.type}");
+        if (kDebugMode) {
+          print("✅ PowerUp toplandı: ${powerUp.type}");
+        }
         powerUp.collect();
         SoundManager.playSmashSound();
         break;
       } else {
-        print(
-            "❌ PowerUp mesafe fazla - Distance: $distance, Radius: $powerUpRadius");
+        if (kDebugMode) {
+          print(
+              "❌ PowerUp mesafe fazla - Distance: $distance, Radius: $powerUpRadius");
+        }
       }
     }
   }
@@ -1596,65 +1815,38 @@ class GameController extends FlameGame
     return buttonRect.contains(tapPosition.toOffset());
   }
 
-  // Böcek sprite'ı oluşturma metodu
+  // Böcek sprite'ı oluşturma metodu - tipine göre farklı şekiller
   Sprite _createBugSprite(Color color, String type, {double scale = 1.0}) {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
     final s = scale;
-    // Daha büyük sprite boyutu için koordinatları 2x'e çıkar
     final multiplier = 2.0;
+    final centerX = 64 * s * multiplier;
+    final centerY = 64 * s * multiplier;
 
-    // Ana vücut
-    final bodyPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(64 * s * multiplier, 64 * s * multiplier),
-        50 * s * multiplier, bodyPaint);
-
-    // Gözler
-    final eyePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(52 * s * multiplier, 52 * s * multiplier),
-        6 * s * multiplier, eyePaint);
-    canvas.drawCircle(Offset(76 * s * multiplier, 52 * s * multiplier),
-        6 * s * multiplier, eyePaint);
-
-    // Göz bebekleri
-    final pupilPaint = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(52 * s * multiplier, 52 * s * multiplier),
-        3 * s * multiplier, pupilPaint);
-    canvas.drawCircle(Offset(76 * s * multiplier, 52 * s * multiplier),
-        3 * s * multiplier, pupilPaint);
-
-    // Bacaklar
-    final legPaint = Paint()
-      ..color = color.withOpacity(0.8)
-      ..strokeWidth = 4.0 * s * multiplier
-      ..style = PaintingStyle.stroke;
-
-    // Sol bacaklar
-    canvas.drawLine(Offset(40 * s * multiplier, 90 * s * multiplier),
-        Offset(30 * s * multiplier, 110 * s * multiplier), legPaint);
-    canvas.drawLine(Offset(50 * s * multiplier, 90 * s * multiplier),
-        Offset(40 * s * multiplier, 110 * s * multiplier), legPaint);
-
-    // Sağ bacaklar
-    canvas.drawLine(Offset(78 * s * multiplier, 90 * s * multiplier),
-        Offset(88 * s * multiplier, 110 * s * multiplier), legPaint);
-    canvas.drawLine(Offset(88 * s * multiplier, 90 * s * multiplier),
-        Offset(98 * s * multiplier, 110 * s * multiplier), legPaint);
-
-    // Kenarlık
-    final borderPaint = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0 * s * multiplier;
-    canvas.drawCircle(Offset(64 * s * multiplier, 64 * s * multiplier),
-        50 * s * multiplier, borderPaint);
+    switch (type) {
+      case "ANT": // Karınca - Yuvarlak gövde, 6 bacak
+        _drawAnt(canvas, color, centerX, centerY, s, multiplier);
+        break;
+      case "SPIDER": // Örümcek - Yuvarlak büyük gövde, 8 bacak
+        _drawSpider(canvas, color, centerX, centerY, s, multiplier);
+        break;
+      case "COCKROACH": // Hamam Böceği - Oval gövde, uzun anten
+        _drawCockroach(canvas, color, centerX, centerY, s, multiplier);
+        break;
+      case "BEETLE": // Böcek - Yuvarlak küçük gövde, kanat detayı
+        _drawBeetle(canvas, color, centerX, centerY, s, multiplier);
+        break;
+      case "WASP": // Eşek Arısı - Uzun ince gövde, kanatlar
+        _drawWasp(canvas, color, centerX, centerY, s, multiplier);
+        break;
+      case "SCORPION": // Akrep - Uzun kuyruk, kıskaçlar
+        _drawScorpion(canvas, color, centerX, centerY, s, multiplier);
+        break;
+      default:
+        _drawAnt(canvas, color, centerX, centerY, s, multiplier);
+    }
 
     final picture = recorder.endRecording();
     final image = picture.toImageSync(
@@ -1663,8 +1855,834 @@ class GameController extends FlameGame
     return Sprite(image);
   }
 
+  // Karınca çizimi - 3 segmentli gövde, belirgin baş
+  void _drawAnt(
+      Canvas canvas, Color color, double cx, double cy, double s, double m) {
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0 * s * m;
+    final eyePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final pupilPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+    final legPaint = Paint()
+      ..color = color.withOpacity(0.9)
+      ..strokeWidth = 3.5 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Baş (üstte, daha büyük)
+    canvas.drawCircle(Offset(cx, cy - 25 * s * m), 22 * s * m, bodyPaint);
+    canvas.drawCircle(Offset(cx, cy - 25 * s * m), 22 * s * m, borderPaint);
+
+    // Göğüs (orta, orta büyüklük)
+    canvas.drawCircle(Offset(cx, cy), 20 * s * m, bodyPaint);
+    canvas.drawCircle(Offset(cx, cy), 20 * s * m, borderPaint);
+
+    // Karın (altta, en büyük)
+    canvas.drawCircle(Offset(cx, cy + 25 * s * m), 28 * s * m, bodyPaint);
+    canvas.drawCircle(Offset(cx, cy + 25 * s * m), 28 * s * m, borderPaint);
+
+    // Gözler (başta)
+    canvas.drawCircle(
+        Offset(cx - 8 * s * m, cy - 30 * s * m), 5 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx + 8 * s * m, cy - 30 * s * m), 5 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx - 8 * s * m, cy - 30 * s * m), 2.5 * s * m, pupilPaint);
+    canvas.drawCircle(
+        Offset(cx + 8 * s * m, cy - 30 * s * m), 2.5 * s * m, pupilPaint);
+
+    // Antenler
+    final antennaPaint = Paint()
+      ..color = color.withOpacity(0.7)
+      ..strokeWidth = 2.0 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(cx - 12 * s * m, cy - 35 * s * m),
+      Offset(cx - 18 * s * m, cy - 45 * s * m),
+      antennaPaint,
+    );
+    canvas.drawLine(
+      Offset(cx + 12 * s * m, cy - 35 * s * m),
+      Offset(cx + 18 * s * m, cy - 45 * s * m),
+      antennaPaint,
+    );
+
+    // 6 bacak (karınca gibi eğik)
+    final legPositions = [
+      cy - 15 * s * m,
+      cy + 5 * s * m,
+      cy + 25 * s * m,
+    ];
+    for (int i = 0; i < 3; i++) {
+      final legY = legPositions[i];
+      final legAngle = (i == 0)
+          ? -0.3
+          : (i == 1)
+              ? 0.0
+              : 0.3;
+      final legLength = 35 * s * m;
+
+      // Sol bacak
+      canvas.drawLine(
+        Offset(cx - 15 * s * m, legY),
+        Offset(cx - 15 * s * m - legLength * cos(legAngle),
+            legY + legLength * sin(legAngle)),
+        legPaint,
+      );
+
+      // Sağ bacak
+      canvas.drawLine(
+        Offset(cx + 15 * s * m, legY),
+        Offset(cx + 15 * s * m + legLength * cos(legAngle),
+            legY + legLength * sin(legAngle)),
+        legPaint,
+      );
+    }
+  }
+
+  // Örümcek çizimi - Büyük gövde, 8 göz, 8 uzun bacak
+  void _drawSpider(
+      Canvas canvas, Color color, double cx, double cy, double s, double m) {
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5 * s * m;
+    final eyePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final pupilPaint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.fill;
+    final legPaint = Paint()
+      ..color = color.withOpacity(0.9)
+      ..strokeWidth = 3.5 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Büyük yuvarlak gövde (örümcek gibi)
+    canvas.drawCircle(Offset(cx, cy), 48 * s * m, bodyPaint);
+    canvas.drawCircle(Offset(cx, cy), 48 * s * m, borderPaint);
+
+    // Gövde üzerinde desen (opsiyonel)
+    final patternPaint = Paint()
+      ..color = color.withOpacity(0.4)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(cx, cy), 35 * s * m, patternPaint);
+
+    // 8 göz (örümcek gibi - 2 sıra halinde)
+    final eyePositions = [
+      Offset(cx - 12 * s * m, cy - 20 * s * m),
+      Offset(cx, cy - 22 * s * m),
+      Offset(cx + 12 * s * m, cy - 20 * s * m),
+      Offset(cx - 8 * s * m, cy - 12 * s * m),
+      Offset(cx + 8 * s * m, cy - 12 * s * m),
+      Offset(cx - 12 * s * m, cy - 8 * s * m),
+      Offset(cx, cy - 6 * s * m),
+      Offset(cx + 12 * s * m, cy - 8 * s * m),
+    ];
+    for (final eyePos in eyePositions) {
+      canvas.drawCircle(eyePos, 3.5 * s * m, eyePaint);
+      canvas.drawCircle(eyePos, 2.0 * s * m, pupilPaint);
+    }
+
+    // 8 uzun bacak (örümcek gibi - kıvrımlı)
+    for (int i = 0; i < 8; i++) {
+      final angle = (i * 45.0) * 3.14159 / 180.0;
+      final startX = cx + 48 * s * m * cos(angle);
+      final startY = cy + 48 * s * m * sin(angle);
+
+      // Kıvrımlı bacak için 2 segment
+      final midX = startX + 25 * s * m * cos(angle);
+      final midY = startY + 25 * s * m * sin(angle);
+      final endX = midX + 30 * s * m * cos(angle + 0.3);
+      final endY = midY + 30 * s * m * sin(angle + 0.3);
+
+      canvas.drawLine(Offset(startX, startY), Offset(midX, midY), legPaint);
+      canvas.drawLine(Offset(midX, midY), Offset(endX, endY), legPaint);
+    }
+  }
+
+  // Hamam Böceği çizimi - Düz uzun gövde, belirgin segmentler, uzun antenler
+  void _drawCockroach(
+      Canvas canvas, Color color, double cx, double cy, double s, double m) {
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5 * s * m;
+    final eyePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final pupilPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+    final legPaint = Paint()
+      ..color = color.withOpacity(0.9)
+      ..strokeWidth = 3.0 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final antennaPaint = Paint()
+      ..color = color.withOpacity(0.7)
+      ..strokeWidth = 2.5 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final segmentPaint = Paint()
+      ..color = Colors.black.withOpacity(0.2)
+      ..strokeWidth = 1.5 * s * m
+      ..style = PaintingStyle.stroke;
+
+    // Ana gövde - düz ve çok uzun oval (hamam böceği gibi)
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy), width: 105 * s * m, height: 60 * s * m),
+      bodyPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy), width: 105 * s * m, height: 60 * s * m),
+      borderPaint,
+    );
+
+    // Belirgin segmentler (hamam böceği gibi)
+    // Baş segmenti
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx - 25 * s * m, cy - 10 * s * m),
+          width: 20 * s * m,
+          height: 18 * s * m),
+      bodyPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx - 25 * s * m, cy - 10 * s * m),
+          width: 20 * s * m,
+          height: 18 * s * m),
+      borderPaint,
+    );
+
+    // Gövde segmentleri
+    for (int i = 0; i < 3; i++) {
+      final segmentX = cx - 10 * s * m + i * 15 * s * m;
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(segmentX, cy),
+            width: 18 * s * m,
+            height: 25 * s * m),
+        bodyPaint,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(segmentX, cy),
+            width: 18 * s * m,
+            height: 25 * s * m),
+        borderPaint,
+      );
+
+      // Segment arası çizgiler
+      if (i < 2) {
+        canvas.drawLine(
+          Offset(segmentX + 9 * s * m, cy - 12 * s * m),
+          Offset(segmentX + 9 * s * m, cy + 12 * s * m),
+          segmentPaint,
+        );
+      }
+    }
+
+    // Gövde üzerinde çizgiler (hamam böceği deseni)
+    final linePaint = Paint()
+      ..color = color.withOpacity(0.4)
+      ..strokeWidth = 1.0 * s * m
+      ..style = PaintingStyle.stroke;
+    for (int i = 0; i < 3; i++) {
+      canvas.drawLine(
+        Offset(cx - 35 * s * m, cy - 8 * s * m + i * 8 * s * m),
+        Offset(cx + 35 * s * m, cy - 8 * s * m + i * 8 * s * m),
+        linePaint,
+      );
+    }
+
+    // Gözler (başta, büyük)
+    canvas.drawCircle(
+        Offset(cx - 30 * s * m, cy - 12 * s * m), 5 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx + 5 * s * m, cy - 12 * s * m), 5 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx - 30 * s * m, cy - 12 * s * m), 2.5 * s * m, pupilPaint);
+    canvas.drawCircle(
+        Offset(cx + 5 * s * m, cy - 12 * s * m), 2.5 * s * m, pupilPaint);
+
+    // Çok uzun antenler (hamam böceği gibi - kıvrımlı)
+    // Sol anten
+    final leftAntennaPath = Path();
+    leftAntennaPath.moveTo(cx - 30 * s * m, cy - 18 * s * m);
+    leftAntennaPath.quadraticBezierTo(
+      cx - 40 * s * m,
+      cy - 28 * s * m,
+      cx - 50 * s * m,
+      cy - 45 * s * m,
+    );
+    canvas.drawPath(leftAntennaPath, antennaPaint);
+    canvas.drawCircle(
+        Offset(cx - 50 * s * m, cy - 45 * s * m), 2.5 * s * m, antennaPaint);
+
+    // Sağ anten
+    final rightAntennaPath = Path();
+    rightAntennaPath.moveTo(cx + 10 * s * m, cy - 18 * s * m);
+    rightAntennaPath.quadraticBezierTo(
+      cx + 25 * s * m,
+      cy - 28 * s * m,
+      cx + 45 * s * m,
+      cy - 45 * s * m,
+    );
+    canvas.drawPath(rightAntennaPath, antennaPaint);
+    canvas.drawCircle(
+        Offset(cx + 45 * s * m, cy - 45 * s * m), 2.5 * s * m, antennaPaint);
+
+    // 6 ince bacak (hamam böceği gibi - kısa ve eğik)
+    final legOffsets = [-30.0, 0.0, 30.0];
+    for (final offset in legOffsets) {
+      final legX = cx + offset;
+      final legStartY = cy + 12 * s * m;
+
+      // Sol bacak (kıvrımlı, kısa)
+      canvas.drawLine(
+        Offset(legX - 8 * s * m, legStartY),
+        Offset(legX - 18 * s * m, legStartY + 18 * s * m),
+        legPaint,
+      );
+      canvas.drawLine(
+        Offset(legX - 18 * s * m, legStartY + 18 * s * m),
+        Offset(legX - 25 * s * m, legStartY + 32 * s * m),
+        legPaint,
+      );
+
+      // Sağ bacak (kıvrımlı, kısa)
+      canvas.drawLine(
+        Offset(legX + 8 * s * m, legStartY),
+        Offset(legX + 18 * s * m, legStartY + 18 * s * m),
+        legPaint,
+      );
+      canvas.drawLine(
+        Offset(legX + 18 * s * m, legStartY + 18 * s * m),
+        Offset(legX + 25 * s * m, legStartY + 32 * s * m),
+        legPaint,
+      );
+    }
+  }
+
+  // Böcek çizimi - Yuvarlak gövde, belirgin kanatlar, segmentli desen
+  void _drawBeetle(
+      Canvas canvas, Color color, double cx, double cy, double s, double m) {
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0 * s * m;
+    final eyePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final pupilPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+    final legPaint = Paint()
+      ..color = color.withOpacity(0.9)
+      ..strokeWidth = 3.5 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final wingPaint = Paint()
+      ..color = color.withOpacity(0.2)
+      ..style = PaintingStyle.fill;
+    final wingDetailPaint = Paint()
+      ..color = Colors.black.withOpacity(0.15)
+      ..strokeWidth = 1.0 * s * m
+      ..style = PaintingStyle.stroke;
+
+    // Yuvarlak gövde (böcek gibi - daha yuvarlak)
+    canvas.drawCircle(Offset(cx, cy), 45 * s * m, bodyPaint);
+    canvas.drawCircle(Offset(cx, cy), 45 * s * m, borderPaint);
+
+    // Gövde üzerinde desen (böcek gibi)
+    final patternPaint = Paint()
+      ..color = color.withOpacity(0.3)
+      ..style = PaintingStyle.fill;
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy - 10 * s * m),
+          width: 60 * s * m,
+          height: 35 * s * m),
+      patternPaint,
+    );
+
+    // Gövde üzerinde çizgiler
+    final linePaint = Paint()
+      ..color = Colors.black.withOpacity(0.2)
+      ..strokeWidth = 1.5 * s * m
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(
+      Offset(cx - 30 * s * m, cy - 15 * s * m),
+      Offset(cx + 30 * s * m, cy - 15 * s * m),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(cx - 25 * s * m, cy),
+      Offset(cx + 25 * s * m, cy),
+      linePaint,
+    );
+
+    // Belirgin kanatlar (üstte, böcek gibi - 2 kanat)
+    // Sol kanat
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx - 12 * s * m, cy - 18 * s * m),
+          width: 40 * s * m,
+          height: 28 * s * m),
+      wingPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx - 12 * s * m, cy - 18 * s * m),
+          width: 40 * s * m,
+          height: 28 * s * m),
+      wingDetailPaint,
+    );
+
+    // Sağ kanat
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx + 12 * s * m, cy - 18 * s * m),
+          width: 40 * s * m,
+          height: 28 * s * m),
+      wingPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx + 12 * s * m, cy - 18 * s * m),
+          width: 40 * s * m,
+          height: 28 * s * m),
+      wingDetailPaint,
+    );
+
+    // Kanat üzerinde damarlar
+    final veinPaint = Paint()
+      ..color = Colors.black.withOpacity(0.25)
+      ..strokeWidth = 1.0 * s * m
+      ..style = PaintingStyle.stroke;
+    for (int i = 0; i < 3; i++) {
+      final veinY = cy - 30 * s * m + i * 12 * s * m;
+      canvas.drawLine(
+        Offset(cx - 25 * s * m, veinY),
+        Offset(cx + 25 * s * m, veinY),
+        veinPaint,
+      );
+    }
+
+    // Kanat kenarlığı
+    final wingBorderPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0 * s * m;
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx - 12 * s * m, cy - 18 * s * m),
+          width: 40 * s * m,
+          height: 28 * s * m),
+      wingBorderPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx + 12 * s * m, cy - 18 * s * m),
+          width: 40 * s * m,
+          height: 28 * s * m),
+      wingBorderPaint,
+    );
+
+    // Gözler (başta, büyük)
+    canvas.drawCircle(
+        Offset(cx - 15 * s * m, cy - 8 * s * m), 6 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx + 15 * s * m, cy - 8 * s * m), 6 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx - 15 * s * m, cy - 8 * s * m), 3 * s * m, pupilPaint);
+    canvas.drawCircle(
+        Offset(cx + 15 * s * m, cy - 8 * s * m), 3 * s * m, pupilPaint);
+
+    // Antenler (kısa)
+    final antennaPaint = Paint()
+      ..color = color.withOpacity(0.8)
+      ..strokeWidth = 2.0 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(cx - 15 * s * m, cy - 14 * s * m),
+      Offset(cx - 20 * s * m, cy - 25 * s * m),
+      antennaPaint,
+    );
+    canvas.drawLine(
+      Offset(cx + 15 * s * m, cy - 14 * s * m),
+      Offset(cx + 20 * s * m, cy - 25 * s * m),
+      antennaPaint,
+    );
+    canvas.drawCircle(
+        Offset(cx - 20 * s * m, cy - 25 * s * m), 2 * s * m, antennaPaint);
+    canvas.drawCircle(
+        Offset(cx + 20 * s * m, cy - 25 * s * m), 2 * s * m, antennaPaint);
+
+    // 6 bacak (böcek gibi kısa ve kalın)
+    final legPositions = [-22.0, 0.0, 22.0];
+    for (final offset in legPositions) {
+      final legX = cx + offset;
+      final legStartY = cy + 15 * s * m;
+
+      // Sol bacak (kısa ve kalın)
+      canvas.drawLine(
+        Offset(legX - 10 * s * m, legStartY),
+        Offset(legX - 22 * s * m, legStartY + 30 * s * m),
+        legPaint,
+      );
+
+      // Sağ bacak (kısa ve kalın)
+      canvas.drawLine(
+        Offset(legX + 10 * s * m, legStartY),
+        Offset(legX + 22 * s * m, legStartY + 30 * s * m),
+        legPaint,
+      );
+    }
+  }
+
+  // Eşek Arısı çizimi - Segmentli gövde, belirgin kanatlar, iğne
+  void _drawWasp(
+      Canvas canvas, Color color, double cx, double cy, double s, double m) {
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5 * s * m;
+    final eyePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final pupilPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+    final legPaint = Paint()
+      ..color = color.withOpacity(0.85)
+      ..strokeWidth = 2.5 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final wingPaint = Paint()
+      ..color = Colors.white.withOpacity(0.5)
+      ..style = PaintingStyle.fill;
+    final stingerPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+
+    // Göğüs (üst, daha büyük)
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy - 15 * s * m),
+          width: 40 * s * m,
+          height: 30 * s * m),
+      bodyPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy - 15 * s * m),
+          width: 40 * s * m,
+          height: 30 * s * m),
+      borderPaint,
+    );
+
+    // Karın (alt, daha ince ve uzun)
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy + 15 * s * m),
+          width: 32 * s * m,
+          height: 45 * s * m),
+      bodyPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy + 15 * s * m),
+          width: 32 * s * m,
+          height: 45 * s * m),
+      borderPaint,
+    );
+
+    // Karın çizgileri (eşek arısı deseni)
+    final stripePaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 2.0 * s * m
+      ..style = PaintingStyle.stroke;
+    for (int i = 0; i < 3; i++) {
+      canvas.drawLine(
+        Offset(cx - 15 * s * m, cy + 5 * s * m + i * 12 * s * m),
+        Offset(cx + 15 * s * m, cy + 5 * s * m + i * 12 * s * m),
+        stripePaint,
+      );
+    }
+
+    // İğne (altta)
+    canvas.drawCircle(Offset(cx, cy + 35 * s * m), 3 * s * m, stingerPaint);
+
+    // Büyük kanatlar (üstte, eşek arısı gibi)
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx - 20 * s * m, cy - 10 * s * m),
+          width: 30 * s * m,
+          height: 20 * s * m),
+      wingPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx + 20 * s * m, cy - 10 * s * m),
+          width: 30 * s * m,
+          height: 20 * s * m),
+      wingPaint,
+    );
+
+    // Kanat kenarlığı
+    final wingBorderPaint = Paint()
+      ..color = Colors.black.withOpacity(0.2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0 * s * m;
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx - 20 * s * m, cy - 10 * s * m),
+          width: 30 * s * m,
+          height: 20 * s * m),
+      wingBorderPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx + 20 * s * m, cy - 10 * s * m),
+          width: 30 * s * m,
+          height: 20 * s * m),
+      wingBorderPaint,
+    );
+
+    // Gözler (başta)
+    canvas.drawCircle(
+        Offset(cx - 6 * s * m, cy - 25 * s * m), 4.5 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx + 6 * s * m, cy - 25 * s * m), 4.5 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx - 6 * s * m, cy - 25 * s * m), 2.5 * s * m, pupilPaint);
+    canvas.drawCircle(
+        Offset(cx + 6 * s * m, cy - 25 * s * m), 2.5 * s * m, pupilPaint);
+
+    // 6 ince bacak (eşek arısı gibi)
+    final legPositions = [-18.0, 0.0, 18.0];
+    for (final offset in legPositions) {
+      final legX = cx + offset;
+      final legY = cy - 5 * s * m + (offset.abs() / 6) * s * m;
+      // Sol bacak
+      canvas.drawLine(
+        Offset(legX - 3 * s * m, legY),
+        Offset(legX - 15 * s * m, legY + 25 * s * m),
+        legPaint,
+      );
+      // Sağ bacak
+      canvas.drawLine(
+        Offset(legX + 3 * s * m, legY),
+        Offset(legX + 15 * s * m, legY + 25 * s * m),
+        legPaint,
+      );
+    }
+  }
+
+  // Akrep çizimi - Segmented gövde, kıvrımlı kuyruk, büyük kıskaçlar
+  void _drawScorpion(
+      Canvas canvas, Color color, double cx, double cy, double s, double m) {
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0 * s * m;
+    final eyePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    final pupilPaint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.fill;
+    final legPaint = Paint()
+      ..color = color.withOpacity(0.9)
+      ..strokeWidth = 3.2 * s * m
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final tailPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final tailBorderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5 * s * m;
+    final clawPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    // Göğüs (üst, akrep gibi)
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy - 12 * s * m),
+          width: 45 * s * m,
+          height: 32 * s * m),
+      bodyPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy - 12 * s * m),
+          width: 45 * s * m,
+          height: 32 * s * m),
+      borderPaint,
+    );
+
+    // Karın (alt, daha küçük)
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy + 8 * s * m),
+          width: 38 * s * m,
+          height: 28 * s * m),
+      bodyPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, cy + 8 * s * m),
+          width: 38 * s * m,
+          height: 28 * s * m),
+      borderPaint,
+    );
+
+    // Kıvrımlı kuyruk (segmentli, akrep gibi)
+    final tailSegments = [
+      Offset(cx, cy + 20 * s * m),
+      Offset(cx + 8 * s * m, cy + 35 * s * m),
+      Offset(cx + 5 * s * m, cy + 50 * s * m),
+      Offset(cx - 2 * s * m, cy + 65 * s * m),
+      Offset(cx - 8 * s * m, cy + 80 * s * m),
+    ];
+
+    for (int i = 0; i < tailSegments.length - 1; i++) {
+      final start = tailSegments[i];
+      final end = tailSegments[i + 1];
+      final midX = (start.dx + end.dx) / 2;
+      final midY = (start.dy + end.dy) / 2;
+
+      final segmentRect = Rect.fromCenter(
+        center: Offset(midX, midY),
+        width: 12 * s * m,
+        height: 12 * s * m,
+      );
+      canvas.drawOval(segmentRect, tailPaint);
+      canvas.drawOval(segmentRect, tailBorderPaint);
+    }
+
+    // Kuyruk ucu (iğne)
+    final stingerPaint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(
+        Offset(cx - 8 * s * m, cy + 80 * s * m), 5 * s * m, stingerPaint);
+    canvas.drawCircle(
+        Offset(cx - 8 * s * m, cy + 80 * s * m), 5 * s * m, borderPaint);
+
+    // Büyük kıskaçlar (ön, akrep gibi)
+    // Sol kıskaç
+    final leftClawPath = Path();
+    leftClawPath.moveTo(cx - 20 * s * m, cy - 20 * s * m);
+    leftClawPath.lineTo(cx - 35 * s * m, cy - 35 * s * m);
+    leftClawPath.lineTo(cx - 40 * s * m, cy - 30 * s * m);
+    leftClawPath.lineTo(cx - 35 * s * m, cy - 25 * s * m);
+    leftClawPath.close();
+    canvas.drawPath(leftClawPath, clawPaint);
+    canvas.drawPath(leftClawPath, borderPaint);
+
+    // Sol kıskaç parmak
+    canvas.drawLine(
+      Offset(cx - 35 * s * m, cy - 30 * s * m),
+      Offset(cx - 45 * s * m, cy - 40 * s * m),
+      borderPaint,
+    );
+
+    // Sağ kıskaç
+    final rightClawPath = Path();
+    rightClawPath.moveTo(cx + 20 * s * m, cy - 20 * s * m);
+    rightClawPath.lineTo(cx + 35 * s * m, cy - 35 * s * m);
+    rightClawPath.lineTo(cx + 40 * s * m, cy - 30 * s * m);
+    rightClawPath.lineTo(cx + 35 * s * m, cy - 25 * s * m);
+    rightClawPath.close();
+    canvas.drawPath(rightClawPath, clawPaint);
+    canvas.drawPath(rightClawPath, borderPaint);
+
+    // Sağ kıskaç parmak
+    canvas.drawLine(
+      Offset(cx + 35 * s * m, cy - 30 * s * m),
+      Offset(cx + 45 * s * m, cy - 40 * s * m),
+      borderPaint,
+    );
+
+    // Gözler (akrep gibi küçük)
+    canvas.drawCircle(
+        Offset(cx - 10 * s * m, cy - 18 * s * m), 3 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx + 10 * s * m, cy - 18 * s * m), 3 * s * m, eyePaint);
+    canvas.drawCircle(
+        Offset(cx - 10 * s * m, cy - 18 * s * m), 1.8 * s * m, pupilPaint);
+    canvas.drawCircle(
+        Offset(cx + 10 * s * m, cy - 18 * s * m), 1.8 * s * m, pupilPaint);
+
+    // 8 bacak (akrep gibi - 4 çift)
+    final legOffsets = [-18.0, -6.0, 6.0, 18.0];
+    for (final offset in legOffsets) {
+      final legX = cx + offset;
+      final legY = cy - 5 * s * m + (offset.abs() / 6) * s * m;
+
+      // Sol bacak (kıvrımlı)
+      canvas.drawLine(
+        Offset(legX - 5 * s * m, legY),
+        Offset(legX - 18 * s * m, legY + 20 * s * m),
+        legPaint,
+      );
+      canvas.drawLine(
+        Offset(legX - 18 * s * m, legY + 20 * s * m),
+        Offset(legX - 25 * s * m, legY + 35 * s * m),
+        legPaint,
+      );
+
+      // Sağ bacak (kıvrımlı)
+      canvas.drawLine(
+        Offset(legX + 5 * s * m, legY),
+        Offset(legX + 18 * s * m, legY + 20 * s * m),
+        legPaint,
+      );
+      canvas.drawLine(
+        Offset(legX + 18 * s * m, legY + 20 * s * m),
+        Offset(legX + 25 * s * m, legY + 35 * s * m),
+        legPaint,
+      );
+    }
+  }
+
   // Gelişmiş pasta sprite'ı oluşturma metodu
-  Sprite createEnhancedCakeSprite({double scale = 1.0}) {
+  Sprite createEnhancedCakeSprite({String? cakeId, double scale = 1.0}) {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
@@ -1674,6 +2692,59 @@ class GameController extends FlameGame
     // Canvas'ı her zaman yüksek çözünürlükte çiz (hangi level olursa olsun)
     const fixedCanvasSize = 150.0;
     final s = fixedCanvasSize / designSize; // Çizim ölçeği 1x (normal boyutta)
+
+    // Pasta modeline göre renkleri belirle
+    Color baseColor = const Color(0xFF8B4513); // Klasik kahverengi
+    Color baseGradientColor = const Color(0xFFA0522D);
+    Color topColor = const Color(0xFFFFF8DC);
+    Color creamColor = const Color(0xFFFFFACD);
+    Color strawberryColor = const Color(0xFFFF6B6B);
+    Color strawberryShadowColor = const Color(0xFFE63946);
+
+    switch (cakeId) {
+      case 'cake_2': // Çikolatalı
+        baseColor = const Color(0xFF3E2723);
+        baseGradientColor = const Color(0xFF5D4037);
+        topColor = const Color(0xFF6D4C41);
+        creamColor = const Color(0xFF8D6E63);
+        strawberryColor = const Color(0xFF795548);
+        strawberryShadowColor = const Color(0xFF5D4037);
+        break;
+      case 'cake_3': // Çilekli
+        baseColor = const Color(0xFFFF6B6B);
+        baseGradientColor = const Color(0xFFFF8C94);
+        topColor = const Color(0xFFFFB6C1);
+        creamColor = const Color(0xFFFFC0CB);
+        strawberryColor = const Color(0xFFFF1493);
+        strawberryShadowColor = const Color(0xFFDC143C);
+        break;
+      case 'cake_4': // Vanilyalı
+        baseColor = const Color(0xFFFFF8DC);
+        baseGradientColor = const Color(0xFFFFFACD);
+        topColor = const Color(0xFFFFFFF0);
+        creamColor = Colors.white;
+        strawberryColor = const Color(0xFFFFD700);
+        strawberryShadowColor = const Color(0xFFFFA500);
+        break;
+      case 'cake_5': // Gökkuşağı
+        baseColor = Colors.purple;
+        baseGradientColor = const Color(0xFF9C27B0);
+        topColor = const Color(0xFFBA68C8);
+        creamColor = const Color(0xFFCE93D8);
+        strawberryColor = Colors.pink;
+        strawberryShadowColor = Colors.red;
+        break;
+      case 'cake_6': // Altın
+        baseColor = const Color(0xFFFFD700);
+        baseGradientColor = const Color(0xFFFFA500);
+        topColor = const Color(0xFFFFE55C);
+        creamColor = const Color(0xFFFFF8DC);
+        strawberryColor = const Color(0xFFFF8C00);
+        strawberryShadowColor = const Color(0xFFFF6347);
+        break;
+      default: // Klasik (cake_1)
+        break;
+    }
 
     // Pasta tabanı (kahverengi) - gölge efekti ile
     final shadowPaint = Paint()
@@ -1691,25 +2762,25 @@ class GameController extends FlameGame
 
     // Pasta tabanı (kahverengi) - ana pasta
     final basePaint = Paint()
-      ..color = const Color(0xFF8B4513)
+      ..color = baseColor
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(75 * s, 75 * s), 57 * s, basePaint);
 
     // Pasta tabanı gradient alt
     final baseGradientPaint = Paint()
-      ..color = const Color(0xFFA0522D)
+      ..color = baseGradientColor
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(75 * s, 82.5 * s), 57 * s, baseGradientPaint);
 
     // Pasta üstü - çift katman
     final topPaint = Paint()
-      ..color = const Color(0xFFFFF8DC)
+      ..color = topColor
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(75 * s, 63 * s), 48 * s, topPaint);
 
     // Pasta üstü - krema detayı
     final creamPaint = Paint()
-      ..color = const Color(0xFFFFFACD)
+      ..color = creamColor
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(75 * s, 57 * s), 42 * s, creamPaint);
 
@@ -1721,7 +2792,7 @@ class GameController extends FlameGame
 
     // Çilek detayları (birkaç çilek)
     final strawberryPaint = Paint()
-      ..color = const Color(0xFFFF6B6B)
+      ..color = strawberryColor
       ..style = PaintingStyle.fill;
 
     // Ana çilek
@@ -1729,7 +2800,7 @@ class GameController extends FlameGame
 
     // Çilek gölgesi
     final strawberryShadow = Paint()
-      ..color = const Color(0xFFE63946)
+      ..color = strawberryShadowColor
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(75 * s, 37.5 * s), 18 * s, strawberryShadow);
 

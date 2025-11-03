@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart';
 import '../game_controller.dart';
 import 'Util/knows_game_size.dart';
 import 'Util/state.dart';
@@ -70,7 +71,9 @@ class EnemyManager extends Component with KnowsGameSize {
     final comboMultiplier = isComboEnemy ? 5 : 1;
 
     if (isComboEnemy) {
-      print("🎯 Level $currentLevel'da KOMBO DÜŞMAN SPAWN EDİLİYOR!");
+      if (kDebugMode) {
+        print("🎯 Level $currentLevel'da KOMBO DÜŞMAN SPAWN EDİLİYOR!");
+      }
     }
 
     // Rastgele sprite seç
@@ -113,8 +116,10 @@ class EnemyManager extends Component with KnowsGameSize {
     enemies.add(enemy);
     add(enemy);
 
-    print(
-        "Düşman spawn edildi: ${enemies.length} ${isComboEnemy ? '(Kombo!)' : ''}");
+    if (kDebugMode) {
+      print(
+          "Düşman spawn edildi: ${enemies.length} ${isComboEnemy ? '(Kombo!)' : ''}");
+    }
 
     // Küçük düşmanları seviye arttıkça daha sık üret: ekstra spawn denemesi
     if (!isComboEnemy && enemies.length < maxEnemies) {

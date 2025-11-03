@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../game_controller.dart';
 import 'Util/knows_game_size.dart';
@@ -64,18 +65,18 @@ class PowerUp extends PositionComponent with KnowsGameSize {
 
     // Ana daire (power-up'ın kendisi) - sprite yerine renkli daire
     final mainColor = _getColorForType();
-    final mainPaint = Paint()..color = mainColor.withOpacity(0.9);
+    final mainPaint = Paint()..color = mainColor.withValues(alpha: 0.9);
     canvas.drawCircle(center, baseRadius - 3, mainPaint);
 
     // Dış glow efekti
     final glowPaint = Paint()
-      ..color = mainColor.withOpacity(0.4 * pulse)
+      ..color = mainColor.withValues(alpha: 0.4 * pulse)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
     canvas.drawCircle(center, baseRadius + 8 * pulse, glowPaint);
 
     // İç halka (parıltı efekti)
     final ringPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
+      ..color = Colors.white.withValues(alpha: 0.8)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
     canvas.drawCircle(center, baseRadius - 5, ringPaint);
@@ -201,8 +202,10 @@ class PowerUpManager extends Component with KnowsGameSize {
   Future<void> onLoad() async {
     super.onLoad();
     _spawnTimer.start();
-    print(
-        "🚀 PowerUpManager başlatıldı - İlk spawn: ${_computeSpawnInterval().toStringAsFixed(1)}s");
+    if (kDebugMode) {
+      print(
+          "🚀 PowerUpManager başlatıldı - İlk spawn: ${_computeSpawnInterval().toStringAsFixed(1)}s");
+    }
   }
 
   // Seviye ve spawn hızına göre power-up spawn aralığını günceller
@@ -214,11 +217,35 @@ class PowerUpManager extends Component with KnowsGameSize {
   }
 
   double _computeSpawnInterval() {
-    // Temel süre 15s; düşman spawn hızına bağlı olarak 15 / (1 + multiplier/2)
-    // Minimum 6s olacak şekilde sınırla
+    // Level'e göre spawn hızını artır
+    final level = gameController.currentLevel;
     final m = gameController.spawnRateMultiplier.clamp(1.0, 3.0);
-    final interval = 15.0 / (1.0 + (m - 1.0) * 0.5);
-    return interval.clamp(6.0, 15.0);
+
+    // Temel süre 15s
+    var baseInterval = 15.0;
+
+    // Level'e göre interval azaltma (her level için %8-10 daha hızlı)
+    // İlk 10 level için hızlı azalma, sonrası yavaş azalma
+    double levelReduction;
+    if (level <= 10) {
+      levelReduction = (level - 1) * 0.08; // Her level için %8 azalma
+    } else {
+      // İlk 10 level'daki azalma + sonraki level'lar için ek azalma
+      const baseReduction = 9 * 0.08; // İlk 10 level'daki toplam azalma
+      final additionalLevels = level - 10;
+      levelReduction = baseReduction +
+          (additionalLevels * 0.03); // Sonraki level'lar için %3 azalma
+    }
+
+    // Level azalmasını uygula
+    baseInterval = baseInterval *
+        (1.0 - levelReduction.clamp(0.0, 0.75)); // Max %75 azalma
+
+    // Spawn rate multiplier'ı da uygula
+    final interval = baseInterval / (1.0 + (m - 1.0) * 0.5);
+
+    // Minimum 3s, maksimum 15s
+    return interval.clamp(3.0, 15.0);
   }
 
   void _spawnPowerUp() {
@@ -230,7 +257,9 @@ class PowerUpManager extends Component with KnowsGameSize {
         gameSize.x > 0 && gameSize.y > 0 ? gameSize : gameController.size;
 
     if (effectiveGameSize.x <= 0 || effectiveGameSize.y <= 0) {
-      print("⚠️ PowerUp spawn: gameSize henüz hazır değil");
+      if (kDebugMode) {
+        print("⚠️ PowerUp spawn: gameSize henüz hazır değil");
+      }
       return;
     }
 
@@ -243,15 +272,17 @@ class PowerUpManager extends Component with KnowsGameSize {
     final chance =
         baseChance.clamp(0.85, 0.95); // %85-95 arası garantili yüksek şans
 
-    print(
-        "🎁 PowerUp spawn denemesi - Level: $level, Attempt: $_spawnAttempts, Chance: ${(chance * 100).toStringAsFixed(1)}%");
+    if (kDebugMode) {
+      print(
+          "🎁 PowerUp spawn denemesi - Level: $level, Attempt: $_spawnAttempts, Chance: ${(chance * 100).toStringAsFixed(1)}%");
+    }
 
     if (_random.nextDouble() < chance) {
       final type =
           PowerUpType.values[_random.nextInt(PowerUpType.values.length)];
 
       // Rastgele pozisyon - ekranın içinde kal
-      final margin = 50.0;
+      const margin = 50.0;
       final x =
           margin + _random.nextDouble() * (effectiveGameSize.x - 2 * margin);
       final y =
@@ -266,10 +297,14 @@ class PowerUpManager extends Component with KnowsGameSize {
 
       powerUps.add(powerUp);
       add(powerUp);
-      print(
-          "✅ PowerUp spawn edildi: ${type.toString().split('.').last} at ($x, $y)");
+      if (kDebugMode) {
+        print(
+            "✅ PowerUp spawn edildi: ${type.toString().split('.').last} at ($x, $y)");
+      }
     } else {
-      print("❌ PowerUp spawn başarısız (rastgele)");
+      if (kDebugMode) {
+        print("❌ PowerUp spawn başarısız (rastgele)");
+      }
     }
   }
 

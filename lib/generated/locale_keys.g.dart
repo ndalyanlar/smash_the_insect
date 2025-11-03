@@ -70,5 +70,26 @@ abstract class  LocaleKeys {
   static const powerup_multihit = 'powerup_multihit';
   static const powerup_freeze = 'powerup_freeze';
   static const powerup_bomb = 'powerup_bomb';
+  static const shop = 'shop';
+  static const shop_title = 'shop_title';
+  static const shop_cakes = 'shop_cakes';
+  static const shop_enemies = 'shop_enemies';
+  static const shop_cake_classic = 'shop_cake_classic';
+  static const shop_cake_chocolate = 'shop_cake_chocolate';
+  static const shop_cake_strawberry = 'shop_cake_strawberry';
+  static const shop_cake_vanilla = 'shop_cake_vanilla';
+  static const shop_cake_rainbow = 'shop_cake_rainbow';
+  static const shop_cake_golden = 'shop_cake_golden';
+  static const shop_enemy_ant = 'shop_enemy_ant';
+  static const shop_enemy_spider = 'shop_enemy_spider';
+  static const shop_enemy_cockroach = 'shop_enemy_cockroach';
+  static const shop_enemy_beetle = 'shop_enemy_beetle';
+  static const shop_enemy_wasp = 'shop_enemy_wasp';
+  static const shop_enemy_scorpion = 'shop_enemy_scorpion';
+  static const shop_selected = 'shop_selected';
+  static const shop_tap_to_select = 'shop_tap_to_select';
+  static const shop_purchase_success = 'shop_purchase_success';
+  static const shop_not_enough_coins = 'shop_not_enough_coins';
+  static const shop_coin_info = 'shop_coin_info';
 
 }

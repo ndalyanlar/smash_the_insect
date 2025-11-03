@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../game_controller.dart';
 import 'Util/knows_game_size.dart';
@@ -52,7 +53,9 @@ class Enemy extends SpriteComponent with KnowsGameSize {
     final x = _random.nextDouble() * gameSize.x;
     final y = _random.nextDouble() * gameSize.y;
     randomTarget = Vector2(x, y);
-    print("🎯 Yeni hedef seçildi: $randomTarget (gameSize: $gameSize)");
+    if (kDebugMode) {
+      print("🎯 Yeni hedef seçildi: $randomTarget (gameSize: $gameSize)");
+    }
   }
 
   @override
@@ -61,10 +64,14 @@ class Enemy extends SpriteComponent with KnowsGameSize {
 
     // Kombo düşmanlar için timer'ı başlat ve ilk hedefi seç
     if (isComboEnemy) {
-      print("🎯 Kombo düşman oluşturuldu - size: $size");
+      if (kDebugMode) {
+        print("🎯 Kombo düşman oluşturuldu - size: $size");
+      }
       targetChangeTimer?.start();
       _pickNewRandomTarget(); // İlk hedefi seç
-      print("🎯 Kombo düşman ilk hedef: $randomTarget");
+      if (kDebugMode) {
+        print("🎯 Kombo düşman ilk hedef: $randomTarget");
+      }
       lifeTimer?.start();
     }
   }
@@ -79,7 +86,7 @@ class Enemy extends SpriteComponent with KnowsGameSize {
 
       // Altın renkli kalın kenarlık (önce)
       final borderPaint = Paint()
-        ..color = Color.fromRGBO(255, 215, 0, 1.0)
+        ..color = const Color.fromRGBO(255, 215, 0, 1.0)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 5.0;
 

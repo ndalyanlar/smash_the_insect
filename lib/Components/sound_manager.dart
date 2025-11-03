@@ -1,4 +1,5 @@
 import 'package:flame_audio/flame_audio.dart';
+import 'package:flutter/foundation.dart';
 import 'settings_service.dart';
 
 class SoundManager {
@@ -11,7 +12,9 @@ class SoundManager {
       try {
         await FlameAudio.play('smash.wav', volume: 0.5);
       } catch (e) {
-        print('Smash sound error: $e');
+        if (kDebugMode) {
+          print('Smash sound error: $e');
+        }
       }
     }
   }
@@ -23,15 +26,19 @@ class SoundManager {
         // Hasar için hafif bir "thud" sesi (smash'in daha hafif versiyonu)
         await FlameAudio.play('smash.wav', volume: 0.3);
       } catch (e) {
-        print('Damage sound error: $e');
+        if (kDebugMode) {
+          print('Damage sound error: $e');
+        }
       }
     }
   }
 
   // Arka plan müziği başlat
   static Future<void> startBackgroundMusic() async {
-    print('Attempting to start background music...');
-    print('Music enabled: ${_settings.musicEnabled}');
+    if (kDebugMode) {
+      print('Attempting to start background music...');
+      print('Music enabled: ${_settings.musicEnabled}');
+    }
 
     if (_settings.musicEnabled) {
       try {
@@ -46,12 +53,18 @@ class SoundManager {
         await _backgroundMusicPlayer!.setReleaseMode(ReleaseMode.loop);
         await _backgroundMusicPlayer!.setVolume(0.4);
 
-        print('Background music started successfully with looping');
+        if (kDebugMode) {
+          print('Background music started successfully with looping');
+        }
       } catch (e) {
-        print('Background music error: $e');
+        if (kDebugMode) {
+          print('Background music error: $e');
+        }
       }
     } else {
-      print('Music is disabled in settings');
+      if (kDebugMode) {
+        print('Music is disabled in settings');
+      }
     }
   }
 
@@ -61,10 +74,14 @@ class SoundManager {
       if (_backgroundMusicPlayer != null) {
         await _backgroundMusicPlayer!.stop();
         _backgroundMusicPlayer = null;
-        print('Background music stopped');
+        if (kDebugMode) {
+          print('Background music stopped');
+        }
       }
     } catch (e) {
-      print('Stop background music error: $e');
+      if (kDebugMode) {
+        print('Stop background music error: $e');
+      }
     }
   }
 
@@ -73,10 +90,14 @@ class SoundManager {
     try {
       if (_backgroundMusicPlayer != null) {
         await _backgroundMusicPlayer!.pause();
-        print('Background music paused');
+        if (kDebugMode) {
+          print('Background music paused');
+        }
       }
     } catch (e) {
-      print('Pause background music error: $e');
+      if (kDebugMode) {
+        print('Pause background music error: $e');
+      }
     }
   }
 
@@ -86,13 +107,17 @@ class SoundManager {
       try {
         if (_backgroundMusicPlayer != null) {
           await _backgroundMusicPlayer!.resume();
-          print('Background music resumed');
+          if (kDebugMode) {
+            print('Background music resumed');
+          }
         } else {
           // Eğer müzik yoksa başlat
           startBackgroundMusic();
         }
       } catch (e) {
-        print('Resume background music error: $e');
+        if (kDebugMode) {
+          print('Resume background music error: $e');
+        }
       }
     }
   }

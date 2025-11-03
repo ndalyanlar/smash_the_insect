@@ -1,5 +1,6 @@
 // Geçici olarak Firebase Analytics devre dışı
 // Firebase Analytics paketinde sorun var, daha sonra düzeltilecek
+import 'package:flutter/foundation.dart';
 
 class AnalyticsService {
   static final AnalyticsService _instance = AnalyticsService._internal();
@@ -11,7 +12,9 @@ class AnalyticsService {
 
   // Oyun başlatma
   Future<void> logGameStart() async {
-    print('Analytics: Game started');
+    if (kDebugMode) {
+      print('Analytics: Game started');
+    }
   }
 
   // Oyun bitişi
@@ -21,8 +24,10 @@ class AnalyticsService {
     required int level,
     required int enemiesKilled,
   }) async {
-    print(
-        'Analytics: Game ended - Score: $score, Time: $gameTime, Level: $level, Enemies: $enemiesKilled');
+    if (kDebugMode) {
+      print(
+          'Analytics: Game ended - Score: $score, Time: $gameTime, Level: $level, Enemies: $enemiesKilled');
+    }
   }
 
   // Düşman öldürme
@@ -31,8 +36,10 @@ class AnalyticsService {
     required int currentScore,
     required int level,
   }) async {
-    print(
-        'Analytics: Enemy killed - Type: $enemyType, Score: $currentScore, Level: $level');
+    if (kDebugMode) {
+      print(
+          'Analytics: Enemy killed - Type: $enemyType, Score: $currentScore, Level: $level');
+    }
   }
 
   // Level geçişi
@@ -41,28 +48,38 @@ class AnalyticsService {
     required int score,
     required double gameTime,
   }) async {
-    print(
-        'Analytics: Level up - New Level: $newLevel, Score: $score, Time: $gameTime');
+    if (kDebugMode) {
+      print(
+          'Analytics: Level up - New Level: $newLevel, Score: $score, Time: $gameTime');
+    }
   }
 
   // Ana sayfa görüntüleme
   Future<void> logHomeScreenView() async {
-    print('Analytics: Home screen viewed');
+    if (kDebugMode) {
+      print('Analytics: Home screen viewed');
+    }
   }
 
   // Skor tablosu görüntüleme
   Future<void> logScoreboardView() async {
-    print('Analytics: Scoreboard viewed');
+    if (kDebugMode) {
+      print('Analytics: Scoreboard viewed');
+    }
   }
 
   // Oyun başlatma butonu tıklama
   Future<void> logStartGameButtonClick() async {
-    print('Analytics: Start game button clicked');
+    if (kDebugMode) {
+      print('Analytics: Start game button clicked');
+    }
   }
 
   // Skor tablosu butonu tıklama
   Future<void> logScoreboardButtonClick() async {
-    print('Analytics: Scoreboard button clicked');
+    if (kDebugMode) {
+      print('Analytics: Scoreboard button clicked');
+    }
   }
 
   // Reklam gösterimi
@@ -70,7 +87,9 @@ class AnalyticsService {
     required String adType,
     required String adUnitId,
   }) async {
-    print('Analytics: Ad shown - Type: $adType, Unit ID: $adUnitId');
+    if (kDebugMode) {
+      print('Analytics: Ad shown - Type: $adType, Unit ID: $adUnitId');
+    }
   }
 
   // Reklam tıklama
@@ -78,7 +97,9 @@ class AnalyticsService {
     required String adType,
     required String adUnitId,
   }) async {
-    print('Analytics: Ad clicked - Type: $adType, Unit ID: $adUnitId');
+    if (kDebugMode) {
+      print('Analytics: Ad clicked - Type: $adType, Unit ID: $adUnitId');
+    }
   }
 
   // Reklam yükleme hatası
@@ -87,13 +108,17 @@ class AnalyticsService {
     required String adUnitId,
     required String errorMessage,
   }) async {
-    print(
-        'Analytics: Ad load error - Type: $adType, Unit ID: $adUnitId, Error: $errorMessage');
+    if (kDebugMode) {
+      print(
+          'Analytics: Ad load error - Type: $adType, Unit ID: $adUnitId, Error: $errorMessage');
+    }
   }
 
   // Uygulama açılışı
   Future<void> logAppOpen() async {
-    print('Analytics: App opened');
+    if (kDebugMode) {
+      print('Analytics: App opened');
+    }
   }
 
   // Custom event
@@ -101,7 +126,9 @@ class AnalyticsService {
     required String eventName,
     Map<String, dynamic>? parameters,
   }) async {
-    print('Analytics: Custom event - $eventName, Parameters: $parameters');
+    if (kDebugMode) {
+      print('Analytics: Custom event - $eventName, Parameters: $parameters');
+    }
   }
 
   // Kullanıcı özellikleri
@@ -109,12 +136,16 @@ class AnalyticsService {
     required String name,
     required String value,
   }) async {
-    print('Analytics: User property set - $name: $value');
+    if (kDebugMode) {
+      print('Analytics: User property set - $name: $value');
+    }
   }
 
   // Kullanıcı ID'si ayarlama
   Future<void> setUserId(String userId) async {
-    print('Analytics: User ID set - $userId');
+    if (kDebugMode) {
+      print('Analytics: User ID set - $userId');
+    }
   }
 
   // ATT izin durumu

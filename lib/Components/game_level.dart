@@ -53,7 +53,7 @@ class GameLevel {
 class LevelManager {
   static final List<GameLevel> _levels = [
     // Seviye 1: Başlangıç
-    GameLevel(
+    const GameLevel(
       levelNumber: 1,
       name: "Böcek Bahçesi",
       description: "Küçük karıncalarla başla!",
@@ -64,13 +64,13 @@ class LevelManager {
       enemySpeedMultiplier: 1.0,
       enemySizeMultiplier: 1.0,
       maxEnemies: 5,
-      levelDuration: const Duration(seconds: 60),
-      backgroundColor: const Color(0xFFE8F5E8),
+      levelDuration: Duration(seconds: 60),
+      backgroundColor: Color(0xFFE8F5E8),
       backgroundMusic: "level1.mp3",
     ),
 
     // Seviye 2: Örümcekler
-    GameLevel(
+    const GameLevel(
       levelNumber: 2,
       name: "Örümcek Ağı",
       description: "Hızlı örümcekler geliyor!",
@@ -81,13 +81,13 @@ class LevelManager {
       enemySpeedMultiplier: 1.2,
       enemySizeMultiplier: 0.9,
       maxEnemies: 7,
-      levelDuration: const Duration(seconds: 90),
-      backgroundColor: const Color(0xFFF3E5F5),
+      levelDuration: Duration(seconds: 90),
+      backgroundColor: Color(0xFFF3E5F5),
       backgroundMusic: "level2.mp3",
     ),
 
     // Seviye 3: Hamamböcekleri
-    GameLevel(
+    const GameLevel(
       levelNumber: 3,
       name: "Hamamböceği İstilası",
       description: "Çok hızlı hamamböcekleri!",
@@ -102,13 +102,13 @@ class LevelManager {
       enemySpeedMultiplier: 1.5,
       enemySizeMultiplier: 0.8,
       maxEnemies: 10,
-      levelDuration: const Duration(seconds: 120),
-      backgroundColor: const Color(0xFFFFF3E0),
+      levelDuration: Duration(seconds: 120),
+      backgroundColor: Color(0xFFFFF3E0),
       backgroundMusic: "level3.mp3",
     ),
 
     // Seviye 4: Arılar
-    GameLevel(
+    const GameLevel(
       levelNumber: 4,
       name: "Arı Sürüsü",
       description: "Uçan arılar çok tehlikeli!",
@@ -124,13 +124,13 @@ class LevelManager {
       enemySpeedMultiplier: 1.8,
       enemySizeMultiplier: 0.7,
       maxEnemies: 12,
-      levelDuration: const Duration(seconds: 150),
-      backgroundColor: const Color(0xFFFFF8E1),
+      levelDuration: Duration(seconds: 150),
+      backgroundColor: Color(0xFFFFF8E1),
       backgroundMusic: "level4.mp3",
     ),
 
     // Seviye 5: Boss Seviyesi
-    GameLevel(
+    const GameLevel(
       levelNumber: 5,
       name: "Böcek Kralı",
       description: "Dev böcek boss ile savaş!",
@@ -147,8 +147,8 @@ class LevelManager {
       enemySpeedMultiplier: 2.0,
       enemySizeMultiplier: 1.2,
       maxEnemies: 8,
-      levelDuration: const Duration(seconds: 180),
-      backgroundColor: const Color(0xFFFFEBEE),
+      levelDuration: Duration(seconds: 180),
+      backgroundColor: Color(0xFFFFEBEE),
       backgroundMusic: "boss.mp3",
     ),
   ];

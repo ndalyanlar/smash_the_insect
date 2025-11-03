@@ -4,15 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:smash_the_insect/Components/Util/state.dart';
 import '../game_controller.dart';
 
-class PauseMenu extends Component with HasGameRef<GameController> {
+class PauseMenu extends Component with HasGameReference<GameController> {
   late Rect _menuRect;
   late Rect _resumeButtonRect;
   late Rect _restartButtonRect;
   late Rect _mainMenuButtonRect;
 
   bool _isVisible = false;
-  Color _backgroundColor = Colors.black.withOpacity(0.7);
-  Color _buttonColor = const Color(0xFF4CAF50);
+  final Color _backgroundColor = Colors.black.withOpacity(0.7);
+  final Color _buttonColor = const Color(0xFF4CAF50);
 
   @override
   Future<void> onLoad() async {
@@ -21,7 +21,7 @@ class PauseMenu extends Component with HasGameRef<GameController> {
   }
 
   void _calculateRects() {
-    final screenSize = gameRef.size;
+    final screenSize = game.size;
     final centerX = screenSize.x / 2;
     final centerY = screenSize.y / 2;
 
@@ -33,9 +33,9 @@ class PauseMenu extends Component with HasGameRef<GameController> {
     );
 
     // Butonlar
-    final buttonWidth = 200.0;
-    final buttonHeight = 50.0;
-    final buttonSpacing = 70.0;
+    const buttonWidth = 200.0;
+    const buttonHeight = 50.0;
+    const buttonSpacing = 70.0;
 
     _resumeButtonRect = Rect.fromCenter(
       center: Offset(centerX, centerY - buttonSpacing),
@@ -75,7 +75,7 @@ class PauseMenu extends Component with HasGameRef<GameController> {
     titlePaint.render(
       canvas,
       "OYUN DURAKLADI",
-      Vector2(gameRef.size.x / 2, _menuRect.top + 60),
+      Vector2(game.size.x / 2, _menuRect.top + 60),
       anchor: Anchor.topCenter,
     );
 
@@ -131,27 +131,27 @@ class PauseMenu extends Component with HasGameRef<GameController> {
 
   void show() {
     _isVisible = true;
-    gameRef.pauseEngine();
+    game.pauseEngine();
   }
 
   void hide() {
     _isVisible = false;
-    gameRef.resumeEngine();
+    game.resumeEngine();
   }
 
   void _resumeGame() {
     hide();
-    gameRef.gameState = GameState.playing;
+    game.gameState = GameState.playing;
   }
 
   void _restartGame() {
     hide();
-    gameRef.gameState = GameState.start;
+    game.gameState = GameState.start;
   }
 
   void _goToMainMenu() {
     hide();
-    gameRef.gameState = GameState.start;
+    game.gameState = GameState.start;
   }
 
   bool get isVisible => _isVisible;

@@ -156,11 +156,15 @@ class AdMobService {
         onAdLoaded: (ad) {
           _rewardedAd = ad;
           _isRewardedAdLoaded = true;
-          print('Rewarded ad loaded');
+          if (kDebugMode) {
+            print('Rewarded ad loaded');
+          }
         },
         onAdFailedToLoad: (error) {
           _isRewardedAdLoaded = false;
-          print('Rewarded ad failed to load: $error');
+          if (kDebugMode) {
+            print('Rewarded ad failed to load: $error');
+          }
         },
       ),
     );
@@ -171,7 +175,9 @@ class AdMobService {
     if (_rewardedAd != null && _isRewardedAdLoaded) {
       _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
         onAdShowedFullScreenContent: (ad) {
-          print('Rewarded ad showed full screen content');
+          if (kDebugMode) {
+            print('Rewarded ad showed full screen content');
+          }
         },
         onAdDismissedFullScreenContent: (ad) {
           ad.dispose();
@@ -184,12 +190,16 @@ class AdMobService {
           ad.dispose();
           _rewardedAd = null;
           _isRewardedAdLoaded = false;
-          print('Rewarded ad failed to show: $error');
+          if (kDebugMode) {
+            print('Rewarded ad failed to show: $error');
+          }
         },
       );
 
       _rewardedAd!.show(onUserEarnedReward: (ad, reward) {
-        print('User earned reward: ${reward.amount} ${reward.type}');
+        if (kDebugMode) {
+          print('User earned reward: ${reward.amount} ${reward.type}');
+        }
         onRewarded(reward);
       });
     }
